@@ -1,0 +1,63 @@
+{
+  "versions": [
+    {
+      "version": "1.0.0",
+      "date": "2026-10-19",
+      "changes": [
+        {"type": "feat", "text": "Alkuversio – kuvien tulostus, YouTube, Instagram, X, TikTok"}
+      ]
+    },
+    {
+      "version": "1.0.1",
+      "date": "2026-10-26",
+      "changes": [
+        {"type": "feat", "text": "Changelog-DM: boti kertoo mitä uutta on tullut"},
+        {"type": "break", "text": "POISTA/DELETE-käsky poistaa viestin automaattisesti"}
+      ]
+    },
+    {
+      "version": "1.0.2",
+      "date": "2026-10-27",
+      "changes": [
+        {"type": "feat", "text": "Twitch-klipit ja VOD:it – liitä linkki, boti lataa ja lähettää"}
+      ]
+    },
+    {
+      "version": "1.0.3",
+      "date": "2026-10-27",
+      "changes": [
+        {"type": "improve", "text": "Changelog-DM: reakoi vain suoritetun toiminnon yhteydessä."}
+      ]
+    },
+    {
+      "version": "1.0.4",
+      "date": "2026-10-28",
+      "changes": [
+        {"type": "feat", "text": "Botti odottaa nyt reaktiolla (🎬) käsitelläänkö linkki – @maininta ohittaa kyselyn"},
+        {"type": "feat", "text": "JAA/FORWARD-käsky lähettää yksityisviestin myös julkiselle kanavalle"}
+      ]
+    },
+    {
+      "version": "1.0.5",
+      "date": "2026-10-28",
+      "changes": [
+        {"type": "feat", "text": "Botti tukee nyt käyttäjäkohtaisia asetuksia"},
+        {"type": "feat", "text": "Uudet komennot metadatan hallintaan:\\n• `SISÄLTÖ POIS` / `CONTENT OFF`: Metadata poistetaan, lähetetään vain tiedosto\\n• `SISÄLTÖ PÄÄLLÄ` / `CONTENT ON`: Metadata palautetaan"}
+      ]
+    },
+    {
+      "version": "1.0.6",
+      "date": "2026-10-28",
+      "changes": [
+        {"type": "feat", "text": "Ohjekomennot – 'OHJE', 'OHJE SISÄLTÖ', 'OHJE POISTA', 'OHJE JAA'"}
+      ]
+    },{
+      "version": "1.0.7",
+      "date": "2025-10-29",
+      "changes": [
+        {"type": "feat", "text": "Viestien automaattinen poisto: bot seuraa lähettämiansa viestejä (DM/ ja Channels/ -kansiot) ja poistaa ne oletusarvoisesti 365 päivän kuluttua."},
+        {"type": "feat", "text": "UNOHDAMINUT-komento: poistaa kaiken botin tallentaman käyttäjästä – kaikki DM-viestit Discordista, tracking-tiedostot ja käyttäjäasetukset."}
+      ]
+    }
+  ]
+}

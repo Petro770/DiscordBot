@@ -1,0 +1,20 @@
+# Paikalliset asetukset ja käyttäjätiedot
+.env
+.env.*
+!.env.example
+/DM/
+/Channels/
+/user_data.json
+/user_versions.json
+
+# Lokit ja FFmpegin väliaikaistiedostot
+*.log
+ffmpeg2pass-*.log.mbtree
+
+# Python ja editorit
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.idea/
