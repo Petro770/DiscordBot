@@ -289,42 +289,65 @@ class ChannelAttachments:
             return
 
         await interaction.response.defer(ephemeral=True, thinking=True)
-        log.info("/repostaajat: haetaan uudelleenlähetykset, kanava=%s", channel.id)
-        counts: Counter[int] = Counter()
+        started = monotonic()
+        log.info("/repostaajat: ryhmitellään SQLite-tulokset, kanava=%s", channel.id)
         missing = resolved = 0
         partial = False
         try:
-            rows = await asyncio.to_thread(self.index.repost_messages, channel.id)
+            known, unknown = await asyncio.to_thread(self.index.repost_summary, channel.id)
+            counts = Counter(known)
+            log.info(
+                "/repostaajat: SQLite valmis (%.2f s), kanava=%s, "
+                "ryhmiteltyjä viestejä=%d, Discordista haettavia lähettäjiä=%d",
+                monotonic() - started, channel.id, sum(counts.values()), len(unknown),
+            )
+
+            async def fetch_author(message_id: int):
+                try:
+                    message = await channel.fetch_message(message_id)
+                except discord.NotFound:
+                    return None
+                await asyncio.to_thread(
+                    self.index.save_message_author, channel.id, message_id,
+                    message.author.id, message.author.bot,
+                )
+                return message.author
+
             deadline = monotonic() + 600
-            for message_id, author_id, is_bot in rows:
-                if author_id is None:
-                    if monotonic() >= deadline:
+            batch_size = 5
+            for offset in range(0, len(unknown), batch_size):
+                remaining = deadline - monotonic()
+                if remaining <= 0:
+                    partial = True
+                    break
+                batch = unknown[offset:offset + batch_size]
+                log.info("/repostaajat: kanava=%s, haetaan Discordista lähettäjiä %d–%d/%d",
+                         channel.id, offset + 1, offset + len(batch), len(unknown))
+                results = await asyncio.gather(
+                    *(asyncio.wait_for(fetch_author(message_id), timeout=remaining) for message_id in batch),
+                    return_exceptions=True,
+                )
+                for author in results:
+                    if isinstance(author, asyncio.TimeoutError):
                         partial = True
-                        continue
-                    try:
-                        message = await asyncio.wait_for(
-                            channel.fetch_message(message_id), timeout=deadline - monotonic()
-                        )
-                    except discord.NotFound:
+                    elif isinstance(author, BaseException):
+                        raise author
+                    elif author is None:
                         missing += 1
-                        continue
-                    except asyncio.TimeoutError:
-                        partial = True
-                        continue
-                    author_id, is_bot = message.author.id, message.author.bot
-                    await asyncio.to_thread(
-                        self.index.save_message_author, channel.id, message_id, author_id, is_bot
-                    )
-                    resolved += 1
-                if not is_bot:
-                    counts[author_id] += 1
+                    else:
+                        resolved += 1
+                        if not author.bot:
+                            counts[author.id] += 1
+                if partial:
+                    break
         except Exception:
             log.exception("/repostaajat: haku epäonnistui, kanava=%s", channel.id)
             await interaction.edit_original_response(content="Repostaajalistan haku epäonnistui.")
             return
 
-        log.info("/repostaajat: kanava=%s, käyttäjiä=%s, selvitettyjä tekijöitä=%s, puuttuvia viestejä=%s",
-                 channel.id, len(counts), resolved, missing)
+        log.info("/repostaajat: valmis (%.2f s), kanava=%s, käyttäjiä=%s, "
+                 "selvitettyjä tekijöitä=%s, puuttuvia viestejä=%s, osittainen=%s",
+                 monotonic() - started, channel.id, len(counts), resolved, missing, partial)
         top = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:10]
         lines = ["**Kanavan repostaajat** (täsmälliset liitekopiot)"]
         lines.extend(

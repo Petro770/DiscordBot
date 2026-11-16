@@ -123,24 +123,35 @@ class AttachmentIndex:
                 ON CONFLICT (channel_id, message_id) DO NOTHING
             """, (channel_id, message_id, author_id, is_bot))
 
-    def repost_messages(self, channel_id: int) -> list[tuple[int, int | None, bool | None]]:
-        """Return one row for each message containing an exact repost."""
+    def repost_summary(self, channel_id: int) -> tuple[dict[int, int], list[int]]:
+        """Group known reposts by author and return message IDs without an author."""
         with closing(sqlite3.connect(self.path)) as db:
-            return db.execute("""
-                SELECT DISTINCT current.message_id, authors.author_id, authors.is_bot
-                FROM attachments AS current
-                LEFT JOIN attachment_message_authors AS authors
-                    ON authors.channel_id = current.channel_id
-                    AND authors.message_id = current.message_id
-                WHERE current.channel_id = ?
-                  AND EXISTS (
-                      SELECT 1 FROM attachments AS earlier
-                      WHERE earlier.channel_id = current.channel_id
-                        AND earlier.sha256 = current.sha256
-                        AND earlier.message_id < current.message_id
-                  )
-                ORDER BY current.message_id
+            rows = db.execute("""
+                WITH reposts AS (
+                    SELECT DISTINCT current.message_id, authors.author_id, authors.is_bot
+                    FROM attachments AS current
+                    LEFT JOIN attachment_message_authors AS authors
+                        ON authors.channel_id = current.channel_id
+                        AND authors.message_id = current.message_id
+                    WHERE current.channel_id = ?
+                      AND EXISTS (
+                          SELECT 1 FROM attachments AS earlier
+                          WHERE earlier.channel_id = current.channel_id
+                            AND earlier.sha256 = current.sha256
+                            AND earlier.message_id < current.message_id
+                      )
+                )
+                SELECT author_id,
+                       CASE WHEN author_id IS NULL THEN message_id END AS unknown_message_id,
+                       COUNT(*)
+                FROM reposts
+                WHERE is_bot IS NOT 1
+                GROUP BY author_id, unknown_message_id
+                ORDER BY unknown_message_id
             """, (channel_id,)).fetchall()
+        counts = {author_id: count for author_id, _, count in rows if author_id is not None}
+        unknown = [message_id for author_id, message_id, _ in rows if author_id is None]
+        return counts, unknown
 
     def history_position(self, channel_id: int) -> int | None:
         with closing(sqlite3.connect(self.path)) as db:
