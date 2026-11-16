@@ -149,33 +149,39 @@ class ChannelAttachments:
         self, message: discord.Message, exact: list[RepostStats], similar: list[Match]
     ) -> None:
         base_url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
-        heading = "⚠️ Liitteellesi löytyi aiempi osuma samalta kanavalta."
+        heading = "⚠️ Liitteelle löytyi aiempi osuma samalta kanavalta."
         lines = []
         for stats in exact:
             own_count = f"ainakin {stats.author_count}" if stats.unknown_authors else str(stats.author_count)
             lines.append(
-                f"• Olet lähettänyt tämän **{own_count} kertaa**. "
-                f"Kanavalla se on lähetetty **{stats.channel_count} kertaa**. "
+                f"• **Sama tiedosto · 100 %** (SHA-256 täsmää). "
+                f"Olet lähettänyt tämän **{own_count} kertaa**, "
+                f"kanavalla yhteensä **{stats.channel_count} kertaa**. "
                 f"[Ensimmäinen osuma]({base_url}/{stats.first_message_id})"
             )
         for match in similar:
+            score = f"{match.similarity:.1f}".replace(".", ",")
+            color_difference = f"{match.color_distance:.1f}".replace(".", ",")
             lines.append(
-                f"• [Mahdollinen kuvakopio ({match.similarity:.1f} %)]({base_url}/{match.message_id})"
+                f"• **Mahdollinen kuvakopio · {score} %**. "
+                f"pHash: {match.bit_distance}/64 bittiä eri. "
+                f"Värikartan keskimääräinen ero: {color_difference}/255. "
+                f"[Aiempi osuma]({base_url}/{match.message_id})"
             )
-        log.info("Liiteindeksi: lähetetään varoitus yksityisviestinä, viesti=%s", message.id)
+        log.info("Liiteindeksi: lähetetään varoitus kanavalle, viesti=%s", message.id)
         try:
+            reference = message.to_reference(fail_if_not_exists=False)
             for offset in range(0, len(lines), 5):
-                await message.author.send(
+                await message.channel.send(
                     "\n".join([heading, *lines[offset:offset + 5]]),
+                    reference=reference,
                     allowed_mentions=discord.AllowedMentions.none(),
                     suppress_embeds=True,
                 )
-        except discord.Forbidden:
-            log.warning("Liiteindeksi: yksityisviesti estetty, viesti=%s", message.id)
         except discord.HTTPException:
-            log.exception("Viestin %s yksityisen duplikaattivaroituksen lähetys epäonnistui", message.id)
+            log.exception("Viestin %s duplikaattivaroituksen lähetys kanavalle epäonnistui", message.id)
         else:
-            log.info("Liiteindeksi: yksityinen duplikaattivaroitus lähetetty, viesti=%s", message.id)
+            log.info("Liiteindeksi: duplikaattivaroitus lähetetty kanavalle, viesti=%s", message.id)
 
     async def _check(self, interaction: discord.Interaction, *, scan: bool = False) -> bool:
         if interaction.guild_id is None or interaction.channel_id not in self.channels:

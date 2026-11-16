@@ -53,9 +53,12 @@ Botti indeksoi uudet liitteet oletuksena `TARGET_CHANNEL_ID`-kanavalta.
 Voit valita muita kanavia asettamalla `ATTACHMENT_INDEX_CHANNEL_IDS`-muuttujaan
 kanavien tunnisteet pilkuilla erotettuina. Tyhjä arvo poistaa indeksoinnin käytöstä.
 Kun käyttäjän uuden viestin liitteelle löytyy aiempi osuma samalta kanavalta,
-botti lähettää varoituksen vain liitteen lähettäjälle yksityisviestinä.
+botti vastaa kanavalla liitteen sisältävään viestiin. Varoitus näyttää
+samankaltaisuuspisteet. Mahdolliselle kuvakopiolle näytetään myös pHash-etäisyys
+ja värikartan keskimääräinen ero.
 Täsmälliselle kopiolle viestissä näkyvät lähettäjän oma määrä, kanavan
-kokonaismäärä ja linkki ensimmäiseen indeksoituun osumaan. Kuvakopiosta huomautetaan, kun yhdistetty
+kokonaismäärä ja linkki ensimmäiseen indeksoituun osumaan. Kuvakopiosta
+huomautetaan, kun yhdistetty
 samankaltaisuuspiste on vähintään 90 %. Pisteessä pHashin paino on 70 % ja
 värikartan 30 %. Sama raja koskee myös `/duplikaatit`-hakua.
 
