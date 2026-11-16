@@ -1,6 +1,7 @@
 """Discord integration for indexing and looking up channel attachments."""
 
 import asyncio
+from collections import Counter
 from collections.abc import Iterable
 from hashlib import sha256
 from pathlib import Path
@@ -37,6 +38,7 @@ class ChannelAttachments:
         self._scanning: set[int] = set()
         self._synced = False
         self.tree = app_commands.CommandTree(bot)
+        self.tree.command(name="repostaajat", description="Näytä tämän kanavan eniten liitteitä uudelleen lähettäneet.")(self.reposters)
         self.tree.command(name="indeksoi", description="Indeksoi erä kanavan vanhoja liitteitä.")(self.scan)
         self.tree.command(name="duplikaatit", description="Etsi tiedoston kopioita tältä kanavalta.")(self.search)
 
@@ -85,6 +87,10 @@ class ChannelAttachments:
         if message.attachments:
             log.info("Liiteindeksi: kanava=%s viesti=%s, liitteitä=%s, automaattinen haku=%s",
                      message.channel.id, message.id, len(message.attachments), warn_duplicates)
+            await asyncio.to_thread(
+                self.index.save_message_author, message.channel.id, message.id,
+                message.author.id, message.author.bot,
+            )
         matches: dict[int, Match] = {}
         for attachment in message.attachments:
             log.debug("Liite %s: odottaa käsittelyvuoroa, viesti=%s", attachment.id, message.id)
@@ -269,4 +275,68 @@ class ChannelAttachments:
         await interaction.followup.send(
             "\n".join(lines) or "Kanavan indeksistä ei löytynyt osumia.",
             ephemeral=True, suppress_embeds=True,
+        )
+
+    @app_commands.guild_only()
+    async def reposters(self, interaction: discord.Interaction) -> None:
+        if not await self._check(interaction):
+            return
+        channel = interaction.channel
+        if not isinstance(channel, discord.abc.Messageable):
+            await interaction.response.send_message(
+                "Tältä kanavalta ei voi hakea viestejä.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        log.info("/repostaajat: haetaan uudelleenlähetykset, kanava=%s", channel.id)
+        counts: Counter[int] = Counter()
+        missing = resolved = 0
+        partial = False
+        try:
+            rows = await asyncio.to_thread(self.index.repost_messages, channel.id)
+            deadline = monotonic() + 600
+            for message_id, author_id, is_bot in rows:
+                if author_id is None:
+                    if monotonic() >= deadline:
+                        partial = True
+                        continue
+                    try:
+                        message = await asyncio.wait_for(
+                            channel.fetch_message(message_id), timeout=deadline - monotonic()
+                        )
+                    except discord.NotFound:
+                        missing += 1
+                        continue
+                    except asyncio.TimeoutError:
+                        partial = True
+                        continue
+                    author_id, is_bot = message.author.id, message.author.bot
+                    await asyncio.to_thread(
+                        self.index.save_message_author, channel.id, message_id, author_id, is_bot
+                    )
+                    resolved += 1
+                if not is_bot:
+                    counts[author_id] += 1
+        except Exception:
+            log.exception("/repostaajat: haku epäonnistui, kanava=%s", channel.id)
+            await interaction.edit_original_response(content="Repostaajalistan haku epäonnistui.")
+            return
+
+        log.info("/repostaajat: kanava=%s, käyttäjiä=%s, selvitettyjä tekijöitä=%s, puuttuvia viestejä=%s",
+                 channel.id, len(counts), resolved, missing)
+        top = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:10]
+        lines = ["**Kanavan repostaajat** (täsmälliset liitekopiot)"]
+        lines.extend(
+            f"{rank}. <@{author_id}> — {count}"
+            for rank, (author_id, count) in enumerate(top, start=1)
+        )
+        if not top:
+            lines.append("Indeksistä ei löytynyt listattavia uudelleenlähetyksiä.")
+        if missing:
+            lines.append(f"Tekijää ei saatu selville {missing} poistetusta viestistä.")
+        if partial:
+            lines.append("Lista on osittainen. Aja /repostaajat uudelleen jatkaaksesi tekijöiden hakua.")
+        await interaction.edit_original_response(
+            content="\n".join(lines), allowed_mentions=discord.AllowedMentions.none()
         )

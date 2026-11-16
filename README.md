@@ -67,6 +67,11 @@ värikartan 30 %. Sama raja koskee myös `/duplikaatit`-hakua.
   näytetään ensin ja visuaaliset pHash- ja värikarttaosumat mahdollisina kopioina.
   Animoiduille kuville ja muille tiedostoille käytetään SHA-256:ta.
 
+- `/repostaajat` listaa nykyisen kanavan kymmenen eniten tarkkoja liitekopioita
+  lähettänyttä käyttäjää. Yksi viesti lasketaan kerran ja bottitilit ohitetaan.
+  Vanhojen indeksirivien tekijät haetaan tarvittaessa viesteistä Discordissa.
+  Haku käyttää tallennettuja tiivisteitä, joten liitteitä ei ladata uudelleen.
+
 Varmista, että botin Discord-asennuksella on `applications.commands`-oikeus.
 Liitteet ladataan väliaikaisesti sormenjälkien laskemista varten.
 `Channels/attachments.sqlite3` sisältää indeksin ja historiaskannauksen etenemisen.

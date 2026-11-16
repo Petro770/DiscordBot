@@ -81,6 +81,13 @@ class AttachmentIndex:
                 );
                 CREATE INDEX IF NOT EXISTS attachments_by_hash
                     ON attachments (channel_id, sha256, message_id);
+                CREATE TABLE IF NOT EXISTS attachment_message_authors (
+                    channel_id INTEGER NOT NULL,
+                    message_id INTEGER NOT NULL,
+                    author_id INTEGER NOT NULL,
+                    is_bot INTEGER NOT NULL,
+                    PRIMARY KEY (channel_id, message_id)
+                );
                 CREATE TABLE IF NOT EXISTS history_progress (
                     channel_id INTEGER PRIMARY KEY,
                     message_id INTEGER NOT NULL
@@ -106,6 +113,34 @@ class AttachmentIndex:
             """, (channel_id, attachment_id, message_id, filename, image.sha256,
                   image.phash, image.color_grid, image.width, image.height))
             return result.rowcount == 1
+
+    def save_message_author(self, channel_id: int, message_id: int, author_id: int,
+                            is_bot: bool) -> None:
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute("""
+                INSERT INTO attachment_message_authors (channel_id, message_id, author_id, is_bot)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (channel_id, message_id) DO NOTHING
+            """, (channel_id, message_id, author_id, is_bot))
+
+    def repost_messages(self, channel_id: int) -> list[tuple[int, int | None, bool | None]]:
+        """Return one row for each message containing an exact repost."""
+        with closing(sqlite3.connect(self.path)) as db:
+            return db.execute("""
+                SELECT DISTINCT current.message_id, authors.author_id, authors.is_bot
+                FROM attachments AS current
+                LEFT JOIN attachment_message_authors AS authors
+                    ON authors.channel_id = current.channel_id
+                    AND authors.message_id = current.message_id
+                WHERE current.channel_id = ?
+                  AND EXISTS (
+                      SELECT 1 FROM attachments AS earlier
+                      WHERE earlier.channel_id = current.channel_id
+                        AND earlier.sha256 = current.sha256
+                        AND earlier.message_id < current.message_id
+                  )
+                ORDER BY current.message_id
+            """, (channel_id,)).fetchall()
 
     def history_position(self, channel_id: int) -> int | None:
         with closing(sqlite3.connect(self.path)) as db:
