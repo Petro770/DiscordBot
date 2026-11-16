@@ -246,6 +246,7 @@ class AttachmentIndex:
     def find(
         self, channel_id: int, image: Fingerprint, *,
         before_message_id: int | None = None, limit: int = 10,
+        visual_threshold: float = VISUAL_MATCH_THRESHOLD,
     ) -> list[Match]:
         params = {
             "channel_id": channel_id,
@@ -286,7 +287,7 @@ class AttachmentIndex:
                 compared += 1
                 if best_candidate is None or score > best_candidate.similarity:
                     best_candidate = candidate
-                if score < VISUAL_MATCH_THRESHOLD:
+                if score < visual_threshold:
                     continue
                 previous = best_by_message.get(message_id)
                 if previous is None or score > previous.similarity:
@@ -294,7 +295,7 @@ class AttachmentIndex:
 
             log.info(
                 "Kuvavertailu: kanava=%s, ehdokkaita=%d, raja=%.1f%%, osumaviestejä=%d",
-                channel_id, compared, VISUAL_MATCH_THRESHOLD, len(best_by_message),
+                channel_id, compared, visual_threshold, len(best_by_message),
             )
             if best_candidate is not None:
                 log.info(

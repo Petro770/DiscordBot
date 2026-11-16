@@ -59,8 +59,11 @@ ja värikartan keskimääräinen ero.
 Täsmälliselle kopiolle viestissä näkyvät lähettäjän oma määrä, kanavan
 kokonaismäärä ja linkki ensimmäiseen indeksoituun osumaan. Kuvakopiosta
 huomautetaan, kun yhdistetty
-samankaltaisuuspiste on vähintään 90 %. Pisteessä pHashin paino on 70 % ja
-värikartan 30 %. Sama raja koskee myös `/duplikaatit`-hakua.
+samankaltaisuuspiste on oletuksena vähintään 90 %. Pisteessä pHashin paino on
+70 % ja värikartan 30 %. Automaattisen varoituksen rajan voi vaihtaa
+`.env`-asetuksella `REPOST_WARNING_THRESHOLD=92.5` (0–100). Käynnistä botti
+uudelleen asetuksen muuttamisen jälkeen. Täsmälliset SHA-256-osumat varoitetaan
+aina, ja `/duplikaatit`-haun kuvavertailun raja on 90 %.
 
 - `/indeksoi` lukee nykyisen kanavan historiaa enintään 1 000 viestiä kerrallaan.
   Komento vaatii käyttäjältä **Manage Messages** -oikeuden. Jos historiaa on vielä

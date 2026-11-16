@@ -15,6 +15,12 @@ ATTACHMENT_INDEX_CHANNEL_IDS = frozenset(
     for channel_id in os.getenv("ATTACHMENT_INDEX_CHANNEL_IDS", _raw).split(",")
     if channel_id.strip()
 )
+try:
+    REPOST_WARNING_THRESHOLD = float(os.getenv("REPOST_WARNING_THRESHOLD", "90"))
+except ValueError as exc:
+    raise ValueError("REPOST_WARNING_THRESHOLD pitää antaa prosenttilukuna, esimerkiksi 92.5.") from exc
+if not 0 <= REPOST_WARNING_THRESHOLD <= 100:
+    raise ValueError("REPOST_WARNING_THRESHOLD pitää olla välillä 0–100.")
 REACTION_EMOJI = "👽"
 URL_REACTION_EMOJI = "🎬"
 MEME_TEXT = "Bogos Binted!"

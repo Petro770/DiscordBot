@@ -11,6 +11,7 @@ import aiohttp
 import discord
 from discord import app_commands
 
+import config
 from core.attachment_index import AttachmentIndex, Fingerprint, Match, RepostStats, fingerprint
 from core.logging import log
 
@@ -44,7 +45,8 @@ class ChannelAttachments:
     async def setup(self) -> None:
         if self._synced:
             return
-        log.info("Liiteindeksi: alustetaan SQLite, kanavat=%s", sorted(self.channels))
+        log.info("Liiteindeksi: alustetaan SQLite, kanavat=%s, kuvavaroituksen raja=%g %%",
+                 sorted(self.channels), config.REPOST_WARNING_THRESHOLD)
         await asyncio.to_thread(self.index.initialize)
         log.info("Liiteindeksi: SQLite valmis, synkronoidaan Discord-komennot")
         await self.tree.sync()
@@ -127,7 +129,8 @@ class ChannelAttachments:
                                  stats.channel_count, stats.unknown_authors)
                         continue
                     previous = await asyncio.to_thread(
-                        self.index.find, channel_id, image, before_message_id=message.id, limit=1
+                        self.index.find, channel_id, image, before_message_id=message.id, limit=1,
+                        visual_threshold=config.REPOST_WARNING_THRESHOLD,
                     )
                     if previous:
                         match = previous[0]
