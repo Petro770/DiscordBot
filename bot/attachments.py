@@ -105,8 +105,9 @@ class ChannelAttachments:
                     )
                     if previous:
                         match = previous[0]
-                        log.info("Liite %s: aiempi viesti=%s, täsmäosuma=%s, pHash-etäisyys=%s, väriero=%.2f",
-                                 attachment.id, match.message_id, match.exact,
+                        log.info("Liite %s: aiempi viesti=%s, täsmäosuma=%s, pisteet=%.2f%%, "
+                                 "pHash-etäisyys=%s, väriero=%.2f",
+                                 attachment.id, match.message_id, match.exact, match.similarity,
                                  match.bit_distance, match.color_distance)
                         if match.exact or match.message_id not in matches:
                             matches[match.message_id] = match
@@ -124,7 +125,7 @@ class ChannelAttachments:
     ) -> None:
         lines = ["⚠️ Tältä kanavalta löytyi aiempi osuma."]
         for match in matches:
-            label = "Sama tiedosto" if match.exact else "Mahdollinen kuvakopio"
+            label = "Sama tiedosto" if match.exact else f"Mahdollinen kuvakopio ({match.similarity:.1f} %)"
             url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{match.message_id}"
             lines.append(f"• [{label}]({url})")
         log.info("Liiteindeksi: lähetetään duplikaattivaroitus, viesti=%s", message.id)
@@ -239,7 +240,7 @@ class ChannelAttachments:
                  sum(not match.exact for match in matches))
         lines = []
         for match in matches:
-            status = "Sama tiedosto" if match.exact else f"Mahdollinen kopio (pHash {match.bit_distance}/64)"
+            status = "Sama tiedosto" if match.exact else f"Mahdollinen kuvakopio ({match.similarity:.1f} %)"
             url = f"https://discord.com/channels/{interaction.guild_id}/{interaction.channel_id}/{match.message_id}"
             lines.append(f"• [{status}]({url})")
         await interaction.followup.send(

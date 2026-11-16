@@ -54,7 +54,9 @@ Voit valita muita kanavia asettamalla `ATTACHMENT_INDEX_CHANNEL_IDS`-muuttujaan
 kanavien tunnisteet pilkuilla erotettuina. Tyhjä arvo poistaa indeksoinnin käytöstä.
 Kun käyttäjän uuden viestin liitteelle löytyy aiempi osuma samalta kanavalta,
 botti vastaa kanavalle linkillä aiempaan viestiin. Vastaus erottaa täsmällisen
-kopion mahdollisesta kuvakopiosta.
+kopion mahdollisesta kuvakopiosta. Kuvakopiosta huomautetaan, kun yhdistetty
+samankaltaisuuspiste on vähintään 90 %. Pisteessä pHashin paino on 70 % ja
+värikartan 30 %. Sama raja koskee myös `/duplikaatit`-hakua.
 
 - `/indeksoi` lukee nykyisen kanavan historiaa enintään 1 000 viestiä kerrallaan.
   Pitkän erän voi jatkaa uudella komennolla noin kahden minuutin jälkeen.

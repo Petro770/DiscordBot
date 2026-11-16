@@ -10,6 +10,11 @@ from typing import BinaryIO
 import imagehash
 from PIL import Image, ImageOps
 
+from core.logging import log
+
+VISUAL_MATCH_THRESHOLD = 90.0
+PHASH_WEIGHT = 0.7
+
 
 @dataclass(frozen=True)
 class Fingerprint:
@@ -43,6 +48,14 @@ class Match:
     exact: bool
     bit_distance: int = 0
     color_distance: float = 0
+
+    @property
+    def similarity(self) -> float:
+        if self.exact:
+            return 100.0
+        hash_difference = self.bit_distance / 64
+        color_difference = self.color_distance / 255
+        return 100 * (1 - PHASH_WEIGHT * hash_difference - (1 - PHASH_WEIGHT) * color_difference)
 
 
 class AttachmentIndex:
@@ -140,24 +153,39 @@ class AttachmentIndex:
             """, params)
             target_hash = int.from_bytes(image.phash, "big")
             exact_ids = {match.message_id for match in exact}
-            best_by_message = {}
+            best_by_message: dict[int, Match] = {}
+            best_candidate: Match | None = None
+            compared = 0
             for message_id, phash, grid in rows:
                 if message_id in exact_ids:
                     continue
                 distance = (target_hash ^ int.from_bytes(phash, "big")).bit_count()
-                if distance > 8:
-                    continue
                 color_distance = sum(abs(a - b) for a, b in zip(image.color_grid, grid)) / len(grid)
-                if color_distance > 20:
+                candidate = Match(message_id, False, distance, color_distance)
+                score = candidate.similarity
+                compared += 1
+                if best_candidate is None or score > best_candidate.similarity:
+                    best_candidate = candidate
+                if score < VISUAL_MATCH_THRESHOLD:
                     continue
                 previous = best_by_message.get(message_id)
-                if previous is None or (distance, color_distance) < (
-                    previous.bit_distance, previous.color_distance
-                ):
-                    best_by_message[message_id] = Match(message_id, False, distance, color_distance)
+                if previous is None or score > previous.similarity:
+                    best_by_message[message_id] = candidate
+
+            log.info(
+                "Kuvavertailu: kanava=%s, ehdokkaita=%d, raja=%.1f%%, osumaviestejä=%d",
+                channel_id, compared, VISUAL_MATCH_THRESHOLD, len(best_by_message),
+            )
+            if best_candidate is not None:
+                log.info(
+                    "Kuvavertailu: kanava=%s, paras viesti=%s, pisteet=%.2f%%, "
+                    "pHash-etäisyys=%d/64, väriero=%.2f/255",
+                    channel_id, best_candidate.message_id, best_candidate.similarity,
+                    best_candidate.bit_distance, best_candidate.color_distance,
+                )
 
             similar = nsmallest(
                 limit - len(exact), best_by_message.values(),
-                key=lambda match: (match.bit_distance, match.color_distance, -match.message_id),
+                key=lambda match: (-match.similarity, -match.message_id),
             )
             return exact + similar
