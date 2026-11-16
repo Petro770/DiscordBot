@@ -18,6 +18,16 @@ HISTORY_BATCH_SIZE = 1000
 HISTORY_BATCH_SECONDS = 120
 
 
+class ScanContinuation(discord.ui.View):
+    def __init__(self, attachments: "ChannelAttachments"):
+        super().__init__(timeout=600)
+        self.attachments = attachments
+
+    @discord.ui.button(label="Jatka indeksointia", style=discord.ButtonStyle.primary)
+    async def continue_scan(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        await self.attachments._scan(interaction, continuation=self)
+
+
 class ChannelAttachments:
     def __init__(self, bot: discord.Client, channels: frozenset[int]):
         self.channels = channels
@@ -157,6 +167,11 @@ class ChannelAttachments:
 
     @app_commands.guild_only()
     async def scan(self, interaction: discord.Interaction) -> None:
+        await self._scan(interaction)
+
+    async def _scan(
+        self, interaction: discord.Interaction, *, continuation: ScanContinuation | None = None
+    ) -> None:
         if not await self._check(interaction, scan=True):
             return
         channel = interaction.channel
@@ -171,13 +186,18 @@ class ChannelAttachments:
         self._scanning.add(channel.id)
         log.info("/indeksoi: käynnistyy kanavalla %s", channel.id)
         try:
-            await interaction.response.defer(ephemeral=True, thinking=True)
+            if continuation is None:
+                await interaction.response.defer(ephemeral=True, thinking=True)
+            else:
+                await interaction.response.edit_message(content="Indeksoidaan seuraavaa erää…", view=None)
+                continuation.stop()
+                log.info("/indeksoi: jatkettiin painikkeesta, kanava=%s", channel.id)
             position = await asyncio.to_thread(self.index.history_position, channel.id)
             after = discord.Object(id=position) if position else None
             log.info("/indeksoi: kanava=%s, aiempi historiakohta=%s", channel.id, position)
             messages = added = unavailable = 0
             deadline = monotonic() + HISTORY_BATCH_SECONDS
-            completion = "Historiaa on vielä jäljellä. Jatka komennolla /indeksoi."
+            has_more = True
             async for message in channel.history(
                 limit=HISTORY_BATCH_SIZE + 1, after=after, oldest_first=True
             ):
@@ -194,27 +214,30 @@ class ChannelAttachments:
             else:
                 if messages == 0:
                     log.info("/indeksoi: kanava=%s, ei uusia viestejä", channel.id)
-                    await interaction.followup.send(
-                        "Ei uusia viestejä indeksoitavaksi. Kanavan historia on ajan tasalla.",
-                        ephemeral=True,
+                    await interaction.edit_original_response(
+                        content="Ei uusia viestejä indeksoitavaksi. Kanavan historia on ajan tasalla.",
+                        view=None,
                     )
                     return
-                completion = "Kanavan historia on ajan tasalla."
+                has_more = False
 
             log.info("/indeksoi: kanava=%s, tarkistettu=%s, lisätty=%s, puuttui=%s",
                      channel.id, messages, added, unavailable)
             summary = f"Tarkistettu {messages} viestiä. Lisätty {added} uutta liitettä."
             if unavailable:
                 summary += f" Saatavilla ei ollut {unavailable} liitettä."
-            await interaction.followup.send(
-                f"{completion} {summary}",
-                ephemeral=True,
+            completion = "Historiaa on vielä jäljellä." if has_more else "Kanavan historia on ajan tasalla."
+            await interaction.edit_original_response(
+                content=f"{completion} {summary}",
+                view=ScanContinuation(self) if has_more else None,
             )
         except Exception:
             log.exception("Kanavan %s liitehistorian indeksointi keskeytyi", channel.id)
-            await interaction.followup.send(
-                "Indeksointi keskeytyi. Yritä jatkaa komennolla /indeksoi.", ephemeral=True
-            )
+            if interaction.response.is_done():
+                await interaction.edit_original_response(
+                    content="Indeksointi keskeytyi. Voit yrittää jatkaa tallennetusta kohdasta.",
+                    view=ScanContinuation(self),
+                )
         finally:
             self._scanning.remove(channel.id)
 
