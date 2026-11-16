@@ -59,9 +59,9 @@ samankaltaisuuspiste on vähintään 90 %. Pisteessä pHashin paino on 70 % ja
 värikartan 30 %. Sama raja koskee myös `/duplikaatit`-hakua.
 
 - `/indeksoi` lukee nykyisen kanavan historiaa enintään 1 000 viestiä kerrallaan.
-  Pitkän erän voi jatkaa uudella komennolla noin kahden minuutin jälkeen.
-  Komento vaatii käyttäjältä **Manage Messages** -oikeuden. Toista komento, kunnes
-  historia on ajan tasalla. Edistyminen tallentuu kanavittain.
+  Komento vaatii käyttäjältä **Manage Messages** -oikeuden. Jos historiaa on vielä
+  jäljellä, paina **Jatka indeksointia**. Painike on käytettävissä 10 minuuttia.
+  Voit aina jatkaa myös uudella `/indeksoi`-komennolla, sillä edistyminen tallentuu kanavittain.
 - `/duplikaatit tiedosto:<liite>` etsii nykyisen kanavan indeksistä ja näyttää
   käyttäjälle linkit enintään kymmeneen viestiin. Täsmälliset SHA-256-osumat
   näytetään ensin ja visuaaliset pHash- ja värikarttaosumat mahdollisina kopioina.
