@@ -156,7 +156,7 @@ class AttachmentIndex:
     def repost_examples(
         self, channel_id: int, author_ids: list[int],
     ) -> dict[int, list[tuple[int, int]]]:
-        """Return two recent reposts and their earliest indexed matches per author."""
+        """Return the two most repeated first messages and their counts per author."""
         if not author_ids:
             return {}
         placeholders = ", ".join("?" for _ in author_ids)
@@ -164,13 +164,13 @@ class AttachmentIndex:
             rows = db.execute(f"""
                 WITH reposts AS (
                     SELECT authors.author_id, current.message_id,
-                           MIN((
+                           (
                                SELECT MIN(earlier.message_id)
                                FROM attachments AS earlier
                                WHERE earlier.channel_id = current.channel_id
                                  AND earlier.sha256 = current.sha256
                                  AND earlier.message_id < current.message_id
-                           )) AS original_id
+                           ) AS original_id
                     FROM attachments AS current
                     JOIN attachment_message_authors AS authors
                       ON authors.channel_id = current.channel_id
@@ -178,23 +178,26 @@ class AttachmentIndex:
                     WHERE current.channel_id = ?
                       AND authors.author_id IN ({placeholders})
                       AND authors.is_bot = 0
-                    GROUP BY authors.author_id, current.message_id
-                    HAVING original_id IS NOT NULL
-                ), ranked AS (
-                    SELECT author_id, message_id, original_id,
-                           ROW_NUMBER() OVER (
-                               PARTITION BY author_id ORDER BY message_id DESC
-                           ) AS example_rank
+                ), totals AS (
+                    SELECT author_id, original_id, COUNT(DISTINCT message_id) AS repost_count
                     FROM reposts
+                    WHERE original_id IS NOT NULL
+                    GROUP BY author_id, original_id
+                ), ranked AS (
+                    SELECT author_id, original_id, repost_count,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY author_id ORDER BY repost_count DESC, original_id
+                           ) AS example_rank
+                    FROM totals
                 )
-                SELECT author_id, message_id, original_id
+                SELECT author_id, original_id, repost_count
                 FROM ranked
                 WHERE example_rank <= 2
                 ORDER BY author_id, example_rank
             """, (channel_id, *author_ids)).fetchall()
         examples: dict[int, list[tuple[int, int]]] = {}
-        for author_id, message_id, original_id in rows:
-            examples.setdefault(author_id, []).append((message_id, original_id))
+        for author_id, original_id, repost_count in rows:
+            examples.setdefault(author_id, []).append((original_id, repost_count))
         return examples
 
     def history_position(self, channel_id: int) -> int | None:

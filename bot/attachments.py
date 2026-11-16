@@ -348,43 +348,33 @@ class ChannelAttachments:
         log.info("/repostaajat: valmis (%.2f s), kanava=%s, käyttäjiä=%s, "
                  "selvitettyjä tekijöitä=%s, puuttuvia viestejä=%s, osittainen=%s",
                  monotonic() - started, channel.id, len(counts), resolved, missing, partial)
-        top = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:10]
-        embed = discord.Embed(
-            title="Kanavan repostaajat",
-            description="Täsmälliset liitekopiot. Ensimmäinen osuma perustuu kanavan indeksiin.",
-        )
-        notes = []
+        top = sorted(counts.items(), key=lambda item: (-item[1], item[0]))[:5]
+        lines = ["**Kanavan repostaajat · Top 5**"]
         if top:
             try:
                 examples = await asyncio.to_thread(
                     self.index.repost_examples, channel.id, [author_id for author_id, _ in top]
                 )
-                log.info("/repostaajat: esimerkkiviestejä=%d, kanava=%s",
+                log.info("/repostaajat: ensimmäisiä osumia=%d, kanava=%s",
                          sum(len(pairs) for pairs in examples.values()), channel.id)
             except Exception:
                 log.exception("/repostaajat: esimerkkien haku epäonnistui, kanava=%s", channel.id)
                 examples = {}
-                notes.append("Esimerkkiviestien haku epäonnistui.")
+                lines.append("Ensimmäisten osumien haku epäonnistui.")
 
             base_url = f"https://discord.com/channels/{interaction.guild_id}/{channel.id}"
             for rank, (author_id, count) in enumerate(top, start=1):
-                lines = [f"<@{author_id}>"]
+                lines.append(f"\n**{rank}.**, **{count} kpl**, <@{author_id}>")
                 lines.extend(
-                    f"[Uudelleenlähetys]({base_url}/{message_id}) · "
-                    f"[Ensimmäinen osuma]({base_url}/{original_id})"
-                    for message_id, original_id in examples.get(author_id, ())
-                )
-                embed.add_field(
-                    name=f"{rank}. — {count} kpl", value="\n".join(lines), inline=False
+                    f"  • **{repost_count} kpl** · [Ensimmäinen osuma]({base_url}/{original_id})"
+                    for original_id, repost_count in examples.get(author_id, ())
                 )
         else:
-            notes.append("Indeksistä ei löytynyt listattavia uudelleenlähetyksiä.")
+            lines.append("Indeksistä ei löytynyt listattavia uudelleenlähetyksiä.")
         if missing:
-            notes.append(f"Tekijää ei saatu selville {missing} poistetusta viestistä.")
+            lines.append(f"Tekijää ei saatu selville {missing} poistetusta viestistä.")
         if partial:
-            notes.append("Lista on osittainen. Aja /repostaajat uudelleen jatkaaksesi tekijöiden hakua.")
-        if notes:
-            embed.description += "\n\n" + "\n".join(notes)
+            lines.append("Lista on osittainen. Aja /repostaajat uudelleen jatkaaksesi tekijöiden hakua.")
         await interaction.edit_original_response(
-            embed=embed, allowed_mentions=discord.AllowedMentions.none()
+            content="\n".join(lines), allowed_mentions=discord.AllowedMentions.none()
         )
