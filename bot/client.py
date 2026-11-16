@@ -30,7 +30,7 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
 
     async def index_attachments(message: discord.Message):
         try:
-            _, unavailable = await attachments.index_message(message)
+            _, unavailable = await attachments.index_message(message, warn_duplicates=not message.author.bot)
             if unavailable:
                 log.warning("Viestin %s liitteistä %s ei ollut saatavilla", message.id, unavailable)
         except Exception:

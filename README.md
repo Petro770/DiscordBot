@@ -52,6 +52,9 @@ Botin tunnus, käyttäjäasetukset, viestiseuranta ja lokit tallentuvat paikalli
 Botti indeksoi uudet liitteet oletuksena `TARGET_CHANNEL_ID`-kanavalta.
 Voit valita muita kanavia asettamalla `ATTACHMENT_INDEX_CHANNEL_IDS`-muuttujaan
 kanavien tunnisteet pilkuilla erotettuina. Tyhjä arvo poistaa indeksoinnin käytöstä.
+Kun käyttäjän uuden viestin liitteelle löytyy aiempi osuma samalta kanavalta,
+botti vastaa kanavalle linkillä aiempaan viestiin. Vastaus erottaa täsmällisen
+kopion mahdollisesta kuvakopiosta.
 
 - `/indeksoi` lukee nykyisen kanavan historiaa enintään 1 000 viestiä kerrallaan.
   Pitkän erän voi jatkaa uudella komennolla noin kahden minuutin jälkeen.

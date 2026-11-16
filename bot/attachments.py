@@ -1,6 +1,7 @@
 """Discord integration for indexing and looking up channel attachments."""
 
 import asyncio
+from collections.abc import Iterable
 from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryFile
@@ -10,7 +11,7 @@ import aiohttp
 import discord
 from discord import app_commands
 
-from core.attachment_index import AttachmentIndex, Fingerprint, fingerprint
+from core.attachment_index import AttachmentIndex, Fingerprint, Match, fingerprint
 from core.logging import log
 
 HISTORY_BATCH_SIZE = 1000
@@ -56,8 +57,11 @@ class ChannelAttachments:
                 await task
                 raise
 
-    async def index_message(self, message: discord.Message) -> tuple[int, int]:
+    async def index_message(
+        self, message: discord.Message, *, warn_duplicates: bool = False
+    ) -> tuple[int, int]:
         added = unavailable = 0
+        matches: dict[int, Match] = {}
         for attachment in message.attachments:
             async with self._downloads:
                 channel_id = message.channel.id
@@ -70,10 +74,40 @@ class ChannelAttachments:
                         raise
                     unavailable += 1
                     continue
-                added += await asyncio.to_thread(
+                saved = await asyncio.to_thread(
                     self.index.save, channel_id, message.id, attachment.id, attachment.filename, image
                 )
+                added += saved
+                if saved and warn_duplicates:
+                    previous = await asyncio.to_thread(
+                        self.index.find, channel_id, image, before_message_id=message.id, limit=1
+                    )
+                    if previous:
+                        match = previous[0]
+                        if match.exact or match.message_id not in matches:
+                            matches[match.message_id] = match
+        if matches:
+            await self._warn_duplicates(message, matches.values())
         return added, unavailable
+
+    async def _warn_duplicates(
+        self, message: discord.Message, matches: Iterable[Match]
+    ) -> None:
+        lines = ["⚠️ Tältä kanavalta löytyi aiempi osuma."]
+        for match in matches:
+            label = "Sama tiedosto" if match.exact else "Mahdollinen kuvakopio"
+            url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{match.message_id}"
+            lines.append(f"• [{label}]({url})")
+        try:
+            await message.channel.send(
+                "\n".join(lines),
+                reference=message.to_reference(fail_if_not_exists=False),
+                allowed_mentions=discord.AllowedMentions.none(),
+                suppress_embeds=True,
+            )
+        except discord.HTTPException:
+            log.exception("Viestin %s duplikaattivaroituksen lähetys epäonnistui", message.id)
+
 
     async def _check(self, interaction: discord.Interaction, *, scan: bool = False) -> bool:
         if interaction.guild_id is None or interaction.channel_id not in self.channels:

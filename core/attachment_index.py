@@ -110,23 +110,34 @@ class AttachmentIndex:
                     message_id = MAX(history_progress.message_id, excluded.message_id)
             """, (channel_id, message_id))
 
-    def find(self, channel_id: int, image: Fingerprint) -> list[Match]:
+    def find(
+        self, channel_id: int, image: Fingerprint, *,
+        before_message_id: int | None = None, limit: int = 10,
+    ) -> list[Match]:
+        params = {
+            "channel_id": channel_id,
+            "sha256": image.sha256,
+            "before": before_message_id,
+            "limit": limit,
+        }
+        earlier_only = "AND message_id < :before" if before_message_id is not None else ""
         with closing(sqlite3.connect(self.path)) as db:
             exact = [
                 Match(message_id, exact=True)
-                for message_id, in db.execute("""
+                for message_id, in db.execute(f"""
                     SELECT DISTINCT message_id FROM attachments
-                    WHERE channel_id = ? AND sha256 = ?
-                    ORDER BY message_id DESC LIMIT 10
-                """, (channel_id, image.sha256))
+                    WHERE channel_id = :channel_id AND sha256 = :sha256 {earlier_only}
+                    ORDER BY message_id DESC LIMIT :limit
+                """, params)
             ]
-            if image.phash is None or image.color_grid is None or len(exact) == 10:
+            if image.phash is None or image.color_grid is None or len(exact) == limit:
                 return exact
 
-            rows = db.execute("""
+            rows = db.execute(f"""
                 SELECT message_id, phash, color_grid FROM attachments
-                WHERE channel_id = ? AND phash IS NOT NULL AND sha256 != ?
-            """, (channel_id, image.sha256))
+                WHERE channel_id = :channel_id AND phash IS NOT NULL AND sha256 != :sha256
+                {earlier_only}
+            """, params)
             target_hash = int.from_bytes(image.phash, "big")
             exact_ids = {match.message_id for match in exact}
             best_by_message = {}
@@ -146,7 +157,7 @@ class AttachmentIndex:
                     best_by_message[message_id] = Match(message_id, False, distance, color_distance)
 
             similar = nsmallest(
-                10 - len(exact), best_by_message.values(),
+                limit - len(exact), best_by_message.values(),
                 key=lambda match: (match.bit_distance, match.color_distance, -match.message_id),
             )
             return exact + similar
