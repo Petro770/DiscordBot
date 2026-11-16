@@ -153,6 +153,50 @@ class AttachmentIndex:
         unknown = [message_id for author_id, message_id, _ in rows if author_id is None]
         return counts, unknown
 
+    def repost_examples(
+        self, channel_id: int, author_ids: list[int],
+    ) -> dict[int, list[tuple[int, int]]]:
+        """Return two recent reposts and their earliest indexed matches per author."""
+        if not author_ids:
+            return {}
+        placeholders = ", ".join("?" for _ in author_ids)
+        with closing(sqlite3.connect(self.path)) as db:
+            rows = db.execute(f"""
+                WITH reposts AS (
+                    SELECT authors.author_id, current.message_id,
+                           MIN((
+                               SELECT MIN(earlier.message_id)
+                               FROM attachments AS earlier
+                               WHERE earlier.channel_id = current.channel_id
+                                 AND earlier.sha256 = current.sha256
+                                 AND earlier.message_id < current.message_id
+                           )) AS original_id
+                    FROM attachments AS current
+                    JOIN attachment_message_authors AS authors
+                      ON authors.channel_id = current.channel_id
+                     AND authors.message_id = current.message_id
+                    WHERE current.channel_id = ?
+                      AND authors.author_id IN ({placeholders})
+                      AND authors.is_bot = 0
+                    GROUP BY authors.author_id, current.message_id
+                    HAVING original_id IS NOT NULL
+                ), ranked AS (
+                    SELECT author_id, message_id, original_id,
+                           ROW_NUMBER() OVER (
+                               PARTITION BY author_id ORDER BY message_id DESC
+                           ) AS example_rank
+                    FROM reposts
+                )
+                SELECT author_id, message_id, original_id
+                FROM ranked
+                WHERE example_rank <= 2
+                ORDER BY author_id, example_rank
+            """, (channel_id, *author_ids)).fetchall()
+        examples: dict[int, list[tuple[int, int]]] = {}
+        for author_id, message_id, original_id in rows:
+            examples.setdefault(author_id, []).append((message_id, original_id))
+        return examples
+
     def history_position(self, channel_id: int) -> int | None:
         with closing(sqlite3.connect(self.path)) as db:
             row = db.execute(
