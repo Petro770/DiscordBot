@@ -2,7 +2,6 @@
 
 import asyncio
 from collections import Counter
-from collections.abc import Iterable
 from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryFile
@@ -12,7 +11,7 @@ import aiohttp
 import discord
 from discord import app_commands
 
-from core.attachment_index import AttachmentIndex, Fingerprint, Match, fingerprint
+from core.attachment_index import AttachmentIndex, Fingerprint, Match, RepostStats, fingerprint
 from core.logging import log
 
 HISTORY_BATCH_SIZE = 1000
@@ -91,6 +90,7 @@ class ChannelAttachments:
                 self.index.save_message_author, message.channel.id, message.id,
                 message.author.id, message.author.bot,
             )
+        exact: dict[bytes, RepostStats] = {}
         matches: dict[int, Match] = {}
         for attachment in message.attachments:
             log.debug("Liite %s: odottaa käsittelyvuoroa, viesti=%s", attachment.id, message.id)
@@ -116,6 +116,16 @@ class ChannelAttachments:
                 log.info("Liite %s: %s", attachment.id, "tallennettu" if saved else "oli jo indeksissä")
                 if saved and warn_duplicates:
                     log.info("Liite %s: etsitään aiempaa osumaa kanavalta %s", attachment.id, channel_id)
+                    stats = await asyncio.to_thread(
+                        self.index.exact_repost_stats, channel_id, message.id, message.author.id, image.sha256
+                    )
+                    if stats is not None:
+                        exact[image.sha256] = stats
+                        log.info("Liite %s: täsmäosuma, ensimmäinen viesti=%s, omia lähetyksiä=%s, "
+                                 "kanavalla=%s, tuntemattomia lähettäjiä=%s",
+                                 attachment.id, stats.first_message_id, stats.author_count,
+                                 stats.channel_count, stats.unknown_authors)
+                        continue
                     previous = await asyncio.to_thread(
                         self.index.find, channel_id, image, before_message_id=message.id, limit=1
                     )
@@ -125,38 +135,47 @@ class ChannelAttachments:
                                  "pHash-etäisyys=%s, väriero=%.2f",
                                  attachment.id, match.message_id, match.exact, match.similarity,
                                  match.bit_distance, match.color_distance)
-                        if match.exact or match.message_id not in matches:
-                            matches[match.message_id] = match
+                        matches[match.message_id] = match
                     else:
                         log.info("Liite %s: ei aiempia osumia", attachment.id)
-        if matches:
-            await self._warn_duplicates(message, matches.values())
+        if exact or matches:
+            await self._warn_duplicates(message, list(exact.values()), list(matches.values()))
         if message.attachments:
             log.info("Liiteindeksi: viesti=%s valmis, lisätty=%s, puuttui=%s, osumaviestejä=%s",
-                     message.id, added, unavailable, len(matches))
+                     message.id, added, unavailable, len(exact) + len(matches))
         return added, unavailable
 
     async def _warn_duplicates(
-        self, message: discord.Message, matches: Iterable[Match]
+        self, message: discord.Message, exact: list[RepostStats], similar: list[Match]
     ) -> None:
-        lines = ["⚠️ Tältä kanavalta löytyi aiempi osuma."]
-        for match in matches:
-            label = "Sama tiedosto" if match.exact else f"Mahdollinen kuvakopio ({match.similarity:.1f} %)"
-            url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{match.message_id}"
-            lines.append(f"• [{label}]({url})")
-        log.info("Liiteindeksi: lähetetään duplikaattivaroitus, viesti=%s", message.id)
-        try:
-            await message.channel.send(
-                "\n".join(lines),
-                reference=message.to_reference(fail_if_not_exists=False),
-                allowed_mentions=discord.AllowedMentions.none(),
-                suppress_embeds=True,
+        base_url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
+        heading = "⚠️ Liitteellesi löytyi aiempi osuma samalta kanavalta."
+        lines = []
+        for stats in exact:
+            own_count = f"ainakin {stats.author_count}" if stats.unknown_authors else str(stats.author_count)
+            lines.append(
+                f"• Olet lähettänyt tämän **{own_count} kertaa**. "
+                f"Kanavalla se on lähetetty **{stats.channel_count} kertaa**. "
+                f"[Ensimmäinen osuma]({base_url}/{stats.first_message_id})"
             )
+        for match in similar:
+            lines.append(
+                f"• [Mahdollinen kuvakopio ({match.similarity:.1f} %)]({base_url}/{match.message_id})"
+            )
+        log.info("Liiteindeksi: lähetetään varoitus yksityisviestinä, viesti=%s", message.id)
+        try:
+            for offset in range(0, len(lines), 5):
+                await message.author.send(
+                    "\n".join([heading, *lines[offset:offset + 5]]),
+                    allowed_mentions=discord.AllowedMentions.none(),
+                    suppress_embeds=True,
+                )
+        except discord.Forbidden:
+            log.warning("Liiteindeksi: yksityisviesti estetty, viesti=%s", message.id)
         except discord.HTTPException:
-            log.exception("Viestin %s duplikaattivaroituksen lähetys epäonnistui", message.id)
+            log.exception("Viestin %s yksityisen duplikaattivaroituksen lähetys epäonnistui", message.id)
         else:
-            log.info("Liiteindeksi: duplikaattivaroitus lähetetty, viesti=%s", message.id)
-
+            log.info("Liiteindeksi: yksityinen duplikaattivaroitus lähetetty, viesti=%s", message.id)
 
     async def _check(self, interaction: discord.Interaction, *, scan: bool = False) -> bool:
         if interaction.guild_id is None or interaction.channel_id not in self.channels:

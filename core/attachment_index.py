@@ -58,6 +58,14 @@ class Match:
         return 100 * (1 - PHASH_WEIGHT * hash_difference - (1 - PHASH_WEIGHT) * color_difference)
 
 
+@dataclass(frozen=True)
+class RepostStats:
+    first_message_id: int
+    author_count: int
+    channel_count: int
+    unknown_authors: int
+
+
 class AttachmentIndex:
     def __init__(self, path: Path):
         self.path = path
@@ -122,6 +130,25 @@ class AttachmentIndex:
                 VALUES (?, ?, ?, ?)
                 ON CONFLICT (channel_id, message_id) DO NOTHING
             """, (channel_id, message_id, author_id, is_bot))
+
+    def exact_repost_stats(
+        self, channel_id: int, message_id: int, author_id: int, sha256: bytes
+    ) -> RepostStats | None:
+        with closing(sqlite3.connect(self.path)) as db:
+            row = db.execute("""
+                SELECT MIN(att.message_id),
+                       COUNT(DISTINCT CASE WHEN authors.author_id = :author THEN att.message_id END),
+                       COUNT(DISTINCT att.message_id),
+                       COUNT(DISTINCT CASE WHEN authors.author_id IS NULL THEN att.message_id END)
+                FROM attachments AS att
+                LEFT JOIN attachment_message_authors AS authors
+                    ON authors.channel_id = att.channel_id AND authors.message_id = att.message_id
+                WHERE att.channel_id = :channel AND att.sha256 = :sha256
+                    AND att.message_id <= :message
+                HAVING MIN(att.message_id) < :message
+            """, {"channel": channel_id, "message": message_id, "author": author_id,
+                  "sha256": sha256}).fetchone()
+        return RepostStats(*row) if row else None
 
     def repost_summary(self, channel_id: int) -> tuple[dict[int, int], list[int]]:
         """Group known reposts by author and return message IDs without an author."""
