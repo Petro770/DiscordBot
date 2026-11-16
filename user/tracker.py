@@ -9,12 +9,19 @@ vanhentuneet viestit Discordista.
 import json
 import os
 import time
+import math
 import asyncio
 from pathlib import Path
 
 import discord
 
-from config import MESSAGE_RETENTION_DAYS, CLEANUP_INTERVAL
+from config import (
+    CLEANUP_INTERVAL,
+    MESSAGE_RETENTION_DAYS,
+    UNTRACKED_BOT_MESSAGE_CHANNEL_ID,
+    UNTRACKED_BOT_MESSAGE_CLEANUP_MODE,
+    UNTRACKED_BOT_MESSAGE_RETENTION_HOURS,
+)
 from core.logging import log
 
 # ============================================================
@@ -49,14 +56,19 @@ def _get_file_path(channel: discord.abc.Messageable) -> Path:
     return CHANNELS_DIR / f"{channel.id}.json"
 
 
-def _load_data(path: Path) -> dict:
+def _load_data(path: Path, *, strict: bool = False) -> dict:
     """Lataa JSON-tiedosto. Palauttaa tyhjän dict jos ei ole olemassa."""
     if not path.exists():
         return {}
     try:
         with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
+            data = json.load(f)
+            if not isinstance(data, dict):
+                raise ValueError("JSONin juuren pitää olla objekti")
+            return data
+    except (ValueError, OSError) as e:
+        if strict:
+            raise
         log.warning("message_tracker: luku epäonnistui (%s): %s", path.name, e)
         return {}
 
@@ -68,10 +80,13 @@ def _save_data(path: Path, data: dict) -> None:
             if path.exists():
                 path.unlink()
             return
-        with open(path, "w", encoding="utf-8") as f:
+        tmp = path.with_suffix(".tmp")
+        with tmp.open("w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
-    except OSError as e:
-        log.error("message_tracker: kirjoitus epäonnistui (%s): %s", path.name, e)
+        tmp.replace(path)
+    except OSError:
+        log.exception("message_tracker: kirjoitus epäonnistui (%s)", path.name)
+        raise
 
 
 # ============================================================
@@ -89,23 +104,95 @@ def register_message(message: discord.Message,lifetime_seconds: int | None = Non
         lifetime_seconds = DEFAULT_LIFETIME_SECONDS
 
     path = _get_file_path(message.channel)
-    data = _load_data(path)
-
     now = time.time()
-    data[str(message.id)] = {
-        "delete_at": now + lifetime_seconds,
-        "created_at": now,
+    try:
+        data = _load_data(path, strict=True)
+        data[str(message.id)] = {"delete_at": now + lifetime_seconds, "created_at": now}
+        _save_data(path, data)
+    except (OSError, ValueError):
+        log.exception("Viestin %s poistoajan tallennus epäonnistui", message.id)
+        return
+    log.debug("Viesti rekisteröity: kanava=%s, viesti=%s, säilytys=%.2f pv",
+              message.channel.id, message.id, lifetime_seconds / 86400)
+
+
+def _has_delete_at(entry: object) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    value = entry.get("delete_at")
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
+
+
+def _fallback_schedule(message: discord.Message) -> dict[str, float]:
+    created_at = message.created_at.timestamp()
+    return {
+        "created_at": created_at,
+        "delete_at": created_at + UNTRACKED_BOT_MESSAGE_RETENTION_HOURS * 3600,
     }
 
+
+def track_unscheduled_message(bot: discord.Client, message: discord.Message) -> None:
+    if (UNTRACKED_BOT_MESSAGE_CLEANUP_MODE != "delete"
+            or message.guild is None
+            or message.channel.id != UNTRACKED_BOT_MESSAGE_CHANNEL_ID
+            or bot.user is None
+            or message.author.id != bot.user.id):
+        return
+    path = _get_file_path(message.channel)
     try:
-        loop = asyncio.get_running_loop()
-        loop.run_in_executor(None, _save_data, path, data)
-        log.debug(
-            "📝 Viesti rekisteröity: ch=%s, msg=%d, poistetaan %.0f pv kuluttuen",
-            message.channel.id, message.id, lifetime_seconds / 86400,
-        )
-    except RuntimeError:
-        _save_data(path, data)
+        data = _load_data(path, strict=True)
+        key = str(message.id)
+        if not _has_delete_at(data.get(key)):
+            data[key] = _fallback_schedule(message)
+            _save_data(path, data)
+            log.debug("Viestisiivous: botin uusi viesti ajastettu, kanava=%s, viesti=%s",
+                      message.channel.id, message.id)
+    except (OSError, ValueError):
+        log.exception("Viestisiivous: viestin %s ajastus epäonnistui", message.id)
+
+
+async def _discover_unscheduled(bot: discord.Client) -> None:
+    mode = UNTRACKED_BOT_MESSAGE_CLEANUP_MODE
+    channel_id = UNTRACKED_BOT_MESSAGE_CHANNEL_ID
+    if mode == "off" or channel_id is None or bot.user is None:
+        return
+    channel = bot.get_channel(channel_id)
+    if channel is None:
+        channel = await bot.fetch_channel(channel_id)
+    if not isinstance(channel, (discord.TextChannel, discord.Thread)):
+        log.warning("Viestisiivous: kanava %s ei ole palvelimen tekstikanava tai ketju", channel_id)
+        return
+
+    tracker_path = _get_file_path(channel)
+    cursor_path = CHANNELS_DIR / f"cleanup-{mode}-{channel_id}.json"
+    cursor = _load_data(cursor_path, strict=True).get("last_message_id")
+    data = _load_data(tracker_path, strict=True)
+    after = discord.Object(id=cursor) if cursor else None
+    candidates = {}
+    last_id = cursor
+    checked = 0
+    async for message in channel.history(limit=500, after=after, oldest_first=True):
+        last_id = message.id
+        checked += 1
+        if message.author.id == bot.user.id and not _has_delete_at(data.get(str(message.id))):
+            candidates[str(message.id)] = _fallback_schedule(message)
+
+    # A live event may have registered messages while Discord history was loading.
+    if candidates:
+        latest = _load_data(tracker_path, strict=True)
+        candidates = {key: entry for key, entry in candidates.items() if not _has_delete_at(latest.get(key))}
+        if mode == "delete" and candidates:
+            latest.update(candidates)
+            _save_data(tracker_path, latest)
+    if last_id != cursor:
+        _save_data(cursor_path, {"last_message_id": last_id})
+    if checked:
+        due = [key for key, entry in candidates.items() if entry["delete_at"] <= time.time()]
+        log.info("Viestisiivous (%s): kanava=%s, tarkistettu=%d, ajastamattomia=%d, erääntyneitä=%d",
+                 mode, channel_id, checked, len(candidates), len(due))
+        if due:
+            log.info("Viestisiivous (%s): erääntyneet viestit, kanava=%s, viestit=%s",
+                     mode, channel_id, ", ".join(due))
 
 
 # ============================================================
@@ -114,47 +201,55 @@ def register_message(message: discord.Message,lifetime_seconds: int | None = Non
 
 async def _cleanup_one_file(bot: discord.Client, path: Path, channel_id: int) -> int:
     """Siivoa yksi tiedosto. Palauttaa poistettujen viestien määrän."""
-    data = _load_data(path)
-    if not data:
-        if path.exists():
-            path.unlink()
-        return 0
-
+    data = _load_data(path, strict=True)
     now = time.time()
-    expired = {k: v for k, v in data.items() if now >= v.get("delete_at", 0)}
-
-    if not expired:
+    expired = {
+        key: entry for key, entry in data.items()
+        if _has_delete_at(entry) and now >= entry["delete_at"]
+    }
+    if not expired or bot.user is None:
         return 0
 
-    # Hae kanava kerran
-    channel: discord.abc.Messageable | None = None
     try:
         channel = bot.get_channel(channel_id)
         if channel is None:
             channel = await bot.fetch_channel(channel_id)
-    except Exception:
-        # Kanavaa ei löydy tai ei oikeuksia – siivoa silti lokista
-        log.info("🧹 Kanavaa %d ei löytynyt, siivotaan lokista.", channel_id)
+    except discord.NotFound:
+        # The channel is gone, so the tracked messages are gone as well.
+        channel = None
+    except discord.HTTPException:
+        log.exception("Viestisiivous: kanavan %s haku epäonnistui, yritetään myöhemmin", channel_id)
+        return 0
 
-    removed = 0
-    for msg_id_str in expired:
+    handled = {}
+    for key, entry in expired.items():
         if channel is not None:
             try:
-                msg = await channel.fetch_message(int(msg_id_str))
-                await msg.delete()
+                msg = await channel.fetch_message(int(key))
+                if msg.author.id != bot.user.id:
+                    log.warning("Viestisiivous: ohitettiin toisen lähettäjän viesti %s", key)
+                elif _load_data(path, strict=True).get(key) == entry:
+                    await msg.delete()
+                else:
+                    continue
             except discord.NotFound:
-                pass  # jo poistettu
-            except discord.Forbidden:
-                log.info("🧹 Ei oikeutta poistaa viestiä %s kanavalta %d.", msg_id_str, channel_id)
-            except Exception as e:
-                log.warning("🧹 Poisto epäonnistui (msg=%s): %s", msg_id_str, e)
+                pass
+            except discord.HTTPException:
+                log.exception("Viestisiivous: viestin %s poisto epäonnistui, yritetään myöhemmin", key)
+                continue
 
-        del data[msg_id_str]
-        removed += 1
+        handled[key] = entry
+        log.debug("Viestisiivous: käsitelty kanava=%s, viesti=%s", channel_id, key)
 
-    _save_data(path, data)
+    current = _load_data(path, strict=True)
+    removed = 0
+    for key, entry in handled.items():
+        if current.get(key) == entry:
+            del current[key]
+            removed += 1
+    if removed:
+        _save_data(path, current)
     return removed
-
 
 async def cleanup_expired(bot: discord.Client) -> int:
     """Skannaa kaikki tiedostot ja poista vanhentuneet viestit.
@@ -196,6 +291,10 @@ async def start_cleanup_task(bot: discord.Client) -> asyncio.Task:
 
     async def _loop():
         while True:
+            try:
+                await _discover_unscheduled(bot)
+            except Exception:
+                log.exception("Viestisiivous: ajastamattomien viestien haku epäonnistui")
             await asyncio.sleep(CLEANUP_INTERVAL)
             try:
                 await cleanup_expired(bot)

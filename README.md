@@ -88,3 +88,21 @@ aina, ja `/duplikaatit`-haun kuvavertailun raja on 90 %.
 Varmista, että botin Discord-asennuksella on `applications.commands`-oikeus.
 Liitteet ladataan väliaikaisesti sormenjälkien laskemista varten.
 `Channels/attachments.sqlite3` sisältää indeksin ja historiaskannauksen etenemisen.
+
+## Botin ajastamattomien kanavaviestien siivous
+
+Taustasiivous etsii botin omia viestejä, joilta puuttuu JSONissa poistoaika.
+Oletuksena käytetään `TARGET_CHANNEL_ID`-kanavaa. Esikatselu kirjaa lokiin
+ehdokkaiden määrän ja erääntyneiden viestien tunnisteet.
+
+```dotenv
+UNTRACKED_BOT_MESSAGE_CLEANUP_MODE=preview
+UNTRACKED_BOT_MESSAGE_RETENTION_HOURS=24
+# UNTRACKED_BOT_MESSAGE_CHANNEL_ID=123456789012345678
+```
+
+Vaihda tila arvoon `delete` ja käynnistä botti uudelleen, kun haluat ottaa
+poiston käyttöön. `off` poistaa ajastamattomien viestien haun käytöstä.
+Poistoaika lasketaan Discordin lähetysajasta. Jo yli vuorokauden ikäiset
+ehdokkaat erääntyvät heti, ja aiemmin asetetut poistoajat säilyvät.
+Botilla pitää olla kanavalla viestihistorian lukuoikeus.
