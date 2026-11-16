@@ -106,8 +106,11 @@ class ChannelAttachments:
             after = discord.Object(id=position) if position else None
             messages = added = unavailable = 0
             deadline = monotonic() + HISTORY_BATCH_SECONDS
-            async for message in channel.history(limit=HISTORY_BATCH_SIZE, after=after, oldest_first=True):
-                if monotonic() >= deadline:
+            completion = "Historiaa on vielä jäljellä. Jatka komennolla /indeksoi."
+            async for message in channel.history(
+                limit=HISTORY_BATCH_SIZE + 1, after=after, oldest_first=True
+            ):
+                if messages == HISTORY_BATCH_SIZE or monotonic() >= deadline:
                     break
                 new, missing = await self.index_message(message)
                 await asyncio.to_thread(self.index.advance_history, channel.id, message.id)
@@ -115,17 +118,19 @@ class ChannelAttachments:
                 added += new
                 unavailable += missing
             else:
-                if messages < HISTORY_BATCH_SIZE:
+                if messages == 0:
                     await interaction.followup.send(
-                        f"Historia ajan tasalla. Käyty läpi {messages} viestiä, "
-                        f"lisätty {added} liitettä. Saatavilla ei ollut {unavailable} liitettä.",
+                        "Ei uusia viestejä indeksoitavaksi. Kanavan historia on ajan tasalla.",
                         ephemeral=True,
                     )
                     return
+                completion = "Kanavan historia on ajan tasalla."
 
+            summary = f"Tarkistettu {messages} viestiä. Lisätty {added} uutta liitettä."
+            if unavailable:
+                summary += f" Saatavilla ei ollut {unavailable} liitettä."
             await interaction.followup.send(
-                f"Käyty läpi {messages} viestiä, lisätty {added} liitettä. "
-                f"Saatavilla ei ollut {unavailable} liitettä. Jatka komennolla /indeksoi.",
+                f"{completion} {summary}",
                 ephemeral=True,
             )
         except Exception:
