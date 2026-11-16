@@ -150,6 +150,46 @@ class AttachmentIndex:
                   "sha256": sha256}).fetchone()
         return RepostStats(*row) if row else None
 
+    def repost_ranks(
+        self, author_id: int, hashes: list[bytes]
+    ) -> tuple[int | None, dict[bytes, int]]:
+        """Rank known authors across channels and per exact attachment hash."""
+        placeholders = ", ".join("?" for _ in hashes)
+        with closing(sqlite3.connect(self.path)) as db:
+            rows = db.execute(f"""
+                WITH reposts AS (
+                    SELECT DISTINCT authors.author_id, current.message_id, current.sha256
+                    FROM attachment_message_authors AS authors
+                    JOIN attachments AS current
+                        ON current.channel_id = authors.channel_id
+                        AND current.message_id = authors.message_id
+                    WHERE authors.is_bot = 0
+                      AND EXISTS (
+                          SELECT 1 FROM attachments AS earlier
+                          WHERE earlier.channel_id = current.channel_id
+                            AND earlier.sha256 = current.sha256
+                            AND earlier.message_id < current.message_id
+                      )
+                ), totals AS (
+                    SELECT author_id, NULL AS sha256, COUNT(DISTINCT message_id) AS total
+                    FROM reposts
+                    GROUP BY author_id
+                    UNION ALL
+                    SELECT author_id, sha256, COUNT(*) AS total
+                    FROM reposts
+                    WHERE sha256 IN ({placeholders})
+                    GROUP BY author_id, sha256
+                ), ranks AS (
+                    SELECT author_id, sha256,
+                           RANK() OVER (PARTITION BY sha256 ORDER BY total DESC) AS position
+                    FROM totals
+                )
+                SELECT sha256, position FROM ranks WHERE author_id = ?
+            """, (*hashes, author_id)).fetchall()
+        global_rank = next((rank for digest, rank in rows if digest is None), None)
+        content_ranks = {digest: rank for digest, rank in rows if digest is not None}
+        return global_rank, content_ranks
+
     def repost_summary(self, channel_id: int) -> tuple[dict[int, int], list[int]]:
         """Group known reposts by author and return message IDs without an author."""
         with closing(sqlite3.connect(self.path)) as db:

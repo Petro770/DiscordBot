@@ -57,7 +57,11 @@ botti vastaa kanavalla liitteen sisältävään viestiin. Varoitus näyttää
 samankaltaisuuspisteet. Mahdolliselle kuvakopiolle näytetään myös pHash-etäisyys
 ja värikartan keskimääräinen ero.
 Täsmälliselle kopiolle viestissä näkyvät lähettäjän oma määrä, kanavan
-kokonaismäärä ja linkki ensimmäiseen indeksoituun osumaan. Kuvakopiosta
+kokonaismäärä ja linkki ensimmäiseen indeksoituun osumaan. Lisäksi varoitus
+näyttää lähettäjän sijoituksen kaikilta indeksoiduilta kanavilta sekä sijoituksen
+saman SHA-256-sisällön uudelleenlähettäjien joukossa. Sijoituksiin lasketaan
+kanavakohtaiset uudelleenlähetykset, joiden lähettäjä on tiedossa.
+Kuvakopiosta
 huomautetaan, kun yhdistetty
 samankaltaisuuspiste on oletuksena vähintään 90 %. Pisteessä pHashin paino on
 70 % ja värikartan 30 %. Automaattisen varoituksen rajan voi vaihtaa

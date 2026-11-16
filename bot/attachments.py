@@ -142,25 +142,42 @@ class ChannelAttachments:
                     else:
                         log.info("Liite %s: ei aiempia osumia", attachment.id)
         if exact or matches:
-            await self._warn_duplicates(message, list(exact.values()), list(matches.values()))
+            await self._warn_duplicates(message, exact, list(matches.values()))
         if message.attachments:
             log.info("Liiteindeksi: viesti=%s valmis, lisätty=%s, puuttui=%s, osumaviestejä=%s",
                      message.id, added, unavailable, len(exact) + len(matches))
         return added, unavailable
 
     async def _warn_duplicates(
-        self, message: discord.Message, exact: list[RepostStats], similar: list[Match]
+        self, message: discord.Message, exact: dict[bytes, RepostStats], similar: list[Match]
     ) -> None:
         base_url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
         heading = "⚠️ Liitteelle löytyi aiempi osuma samalta kanavalta."
+        global_rank = None
+        content_ranks = {}
+        if exact:
+            try:
+                global_rank, content_ranks = await asyncio.to_thread(
+                    self.index.repost_ranks, message.author.id, list(exact)
+                )
+                log.info("Liiteindeksi: repostisijoitukset laskettu, viesti=%s, "
+                         "globaali=%s, sisältösijoituksia=%d",
+                         message.id, global_rank, len(content_ranks))
+            except Exception:
+                log.exception("Liiteindeksi: repostisijoitusten haku epäonnistui, viesti=%s", message.id)
+        if global_rank is not None:
+            heading += f"\n**Sijoituksesi kaikilla indeksoiduilla kanavilla: {global_rank}.**"
+
         lines = []
-        for stats in exact:
+        for digest, stats in exact.items():
+            rank = content_ranks.get(digest)
             own_count = f"ainakin {stats.author_count}" if stats.unknown_authors else str(stats.author_count)
             lines.append(
                 f"• **Sama tiedosto · 100 %** (SHA-256 täsmää). "
                 f"Olet lähettänyt tämän **{own_count} kertaa**, "
                 f"kanavalla yhteensä **{stats.channel_count} kertaa**. "
                 f"[Ensimmäinen osuma]({base_url}/{stats.first_message_id})"
+                + (f" · **Sijoituksesi tälle sisällölle: {rank}.**" if rank is not None else "")
             )
         for match in similar:
             score = f"{match.similarity:.1f}".replace(".", ",")
