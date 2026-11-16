@@ -11,6 +11,7 @@ from bot.handlers import (
     check_reaction,
     cleanup_pending, check_url_reaction,
 )
+from bot.attachments import ChannelAttachments
 from core.logging import log
 from core.queue import init_queue
 
@@ -25,10 +26,43 @@ def create_bot() -> discord.Client:
 def register_events(bot: discord.Client, print_queue: PrintQueue):
     # Alusta yhteiset handlerit (kerran)
     init_handlers(bot, print_queue)
+    attachments = ChannelAttachments(bot, config.ATTACHMENT_INDEX_CHANNEL_IDS)
+
+    async def index_attachments(message: discord.Message):
+        try:
+            _, unavailable = await attachments.index_message(message)
+            if unavailable:
+                log.warning("Viestin %s liitteistä %s ei ollut saatavilla", message.id, unavailable)
+        except Exception:
+            log.exception("Viestin %s liiteindeksointi epäonnistui", message.id)
+
+    async def route_incoming(message: discord.Message):
+        if message.author.bot:
+            return
+
+        if isinstance(message.channel, discord.DMChannel):
+            await route_message(message, [message.author.name])
+            return
+
+        if message.channel.id != TARGET_CHANNEL_ID:
+            return
+
+        names = [message.author.name]
+        if message.guild:
+            gm = message.guild.get_member(message.author)
+            if gm and gm.display_name != message.author.name:
+                names.append(gm.display_name)
+
+        await route_message(message, names)
 
     @bot.event
     async def on_ready():
         log.info("👽 BogosBinted online! %s", bot.user)
+
+        try:
+            await attachments.setup()
+        except Exception:
+            log.exception("Liiteindeksin käyttöönotto epäonnistui")
 
         # Alusta tehtäväjono (ennen kahta muuta)
         await init_queue()
@@ -65,26 +99,10 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
 
     @bot.event
     async def on_message(message: discord.Message):
-        if message.author.bot:
-            return
-
-        # Changelog-tarkistus DM:lläkin
-        if isinstance(message.channel, discord.DMChannel):
-            names = [message.author.name]
-            await route_message(message, names)
-            return
-
-        # Kanava
-        if message.channel.id != TARGET_CHANNEL_ID:
-            return
-
-        names = [message.author.name]
-        if message.guild:
-            gm = message.guild.get_member(message.author)
-            if gm and gm.display_name != message.author.name:
-                names.append(gm.display_name)
-
-        await route_message(message, names)
+        if message.guild and message.attachments and message.channel.id in attachments.channels:
+            await asyncio.gather(index_attachments(message), route_incoming(message))
+        else:
+            await route_incoming(message)
 
     @bot.event
     async def on_raw_reaction_add(reaction: discord.RawReactionActionEvent):

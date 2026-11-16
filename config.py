@@ -10,6 +10,11 @@ BOT_VERSION = "1.0.7"
 TOKEN = os.environ.get("DISCORD_TOKEN", "").strip()
 _raw = os.getenv("TARGET_CHANNEL_ID", "").strip()
 TARGET_CHANNEL_ID: int | None = int(_raw) if _raw else None
+ATTACHMENT_INDEX_CHANNEL_IDS = frozenset(
+    int(channel_id.strip())
+    for channel_id in os.getenv("ATTACHMENT_INDEX_CHANNEL_IDS", _raw).split(",")
+    if channel_id.strip()
+)
 REACTION_EMOJI = "👽"
 URL_REACTION_EMOJI = "🎬"
 MEME_TEXT = "Bogos Binted!"

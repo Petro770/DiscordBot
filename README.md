@@ -46,3 +46,22 @@ Lähetä botille tuettu medialinkki tai kuva yksityisviestinä tai määritetyll
 Ominaisuuksia voi säätää `.env`-tiedostossa. `ENABLE_IMAGE_PRINTING=false` poistaa tulostuksen käytöstä. Tulostus käyttää Windowsin tulostinajuria, ja tulostimen nimi määritetään `config.py`-tiedostossa. `ENABLE_VIDEO_COMPRESS=false` poistaa videopakkauksen käytöstä, ja `VIDEO_COMPRESS_TARGET_MB` määrittää pakkauksen tavoitekoon megatavuina.
 
 Botin tunnus, käyttäjäasetukset, viestiseuranta ja lokit tallentuvat paikallisesti. `.gitignore` rajaa ne versionhallinnan ulkopuolelle.
+
+## Kanavan liitteiden indeksointi
+
+Botti indeksoi uudet liitteet oletuksena `TARGET_CHANNEL_ID`-kanavalta.
+Voit valita muita kanavia asettamalla `ATTACHMENT_INDEX_CHANNEL_IDS`-muuttujaan
+kanavien tunnisteet pilkuilla erotettuina. Tyhjä arvo poistaa indeksoinnin käytöstä.
+
+- `/indeksoi` lukee nykyisen kanavan historiaa enintään 1 000 viestiä kerrallaan.
+  Pitkän erän voi jatkaa uudella komennolla noin kahden minuutin jälkeen.
+  Komento vaatii käyttäjältä **Manage Messages** -oikeuden. Toista komento, kunnes
+  historia on ajan tasalla. Edistyminen tallentuu kanavittain.
+- `/duplikaatit tiedosto:<liite>` etsii nykyisen kanavan indeksistä ja näyttää
+  käyttäjälle linkit enintään kymmeneen viestiin. Täsmälliset SHA-256-osumat
+  näytetään ensin ja visuaaliset pHash- ja värikarttaosumat mahdollisina kopioina.
+  Animoiduille kuville ja muille tiedostoille käytetään SHA-256:ta.
+
+Varmista, että botin Discord-asennuksella on `applications.commands`-oikeus.
+Liitteet ladataan väliaikaisesti sormenjälkien laskemista varten.
+`Channels/attachments.sqlite3` sisältää indeksin ja historiaskannauksen etenemisen.
