@@ -595,6 +595,55 @@ async def handle_twitch(message: discord.Message, url: str, delete_original: boo
         if os.path.exists(filepath):
             os.unlink(filepath)
 
+async def handle_soundcloud(
+    message: discord.Message,
+    url: str,
+    delete_original: bool = False,
+    forward_channel_id: int | None = None,
+):
+    from core.models import NonRetryableError
+    from downloaders.soundcloud import download_soundcloud
+
+    await _changelog_notify(message)
+    sender = Send(message, delete_original, forward_channel_id=forward_channel_id)
+    await sender.send_status("🎵 Ladataan SoundCloud-kappaletta...")
+
+    try:
+        result = await download_soundcloud(url)
+    except NonRetryableError as error:
+        await sender.send(error.user_facing, delete_after=REPLY_DELETE_AFTER)
+        return
+
+    if result is None:
+        await sender.send("⚠️ SoundCloud-kappaleen lataus epäonnistui.", delete_after=REPLY_DELETE_AFTER)
+        return
+
+    try:
+        size = os.path.getsize(result.filepath)
+        limit = _effective_file_limit(message)
+        if size > limit:
+            await sender.send(
+                f"⚠️ Äänitiedosto ylittää Discordin kokorajan "
+                f"({size / 1024**2:.1f} / {limit / 1024**2:.1f} Mt).",
+                delete_after=REPLY_DELETE_AFTER,
+            )
+            return
+
+        content = f"🎵 {result.format_message()}" if should_include_content(message.author.id) else ""
+        file = discord.File(result.filepath, filename=result.filename)
+        try:
+            sent = await sender.send(content, file=file)
+        finally:
+            file.close()
+        if sent is not None:
+            await sender.delete_original()
+    except discord.HTTPException:
+        log.exception("SoundCloud-tiedoston lähettäminen epäonnistui")
+        await sender.send("⚠️ Äänitiedoston lähettäminen epäonnistui.", delete_after=REPLY_DELETE_AFTER)
+    finally:
+        os.unlink(result.filepath)
+
+
 # ============================================================
 # URL-ROUTING (yhteinen)
 # ============================================================
@@ -606,6 +655,7 @@ async def route_message(message: discord.Message, names: list[str]):
     from downloaders.x import is_x
     from downloaders.tiktok import is_tiktok
     from downloaders.twitch import is_twitch
+    from downloaders.soundcloud import is_soundcloud
 
     # --- UNOHDAMINUT (ensimminä, ei saa osua muihin käsitteisiin) ---
     from user.settings import is_unohdaminut, handle_unohdaminut
@@ -664,6 +714,8 @@ async def route_message(message: discord.Message, names: list[str]):
             relevant_urls.extend(u for u in urls if is_tiktok(u))
         if config.ENABLE_TWITCH:
             relevant_urls.extend(u for u in urls if is_twitch(u))
+        if config.ENABLE_SOUNDCLOUD:
+            relevant_urls.extend(u for u in urls if is_soundcloud(u))
 
         if relevant_urls:
             # DM: käsittele aina suoraan
@@ -688,6 +740,8 @@ async def route_message(message: discord.Message, names: list[str]):
                     await handle_tiktok(message, url, delete_original=delete_original, forward_channel_id=fwd)
                 elif is_twitch(url):
                     await handle_twitch(message, url, delete_original=delete_original, forward_channel_id=fwd)
+                elif is_soundcloud(url):
+                    await handle_soundcloud(message, url, delete_original=delete_original, forward_channel_id=fwd)
             else:
                 # Kanava, ei mentionia → reaktiokysely
                 await _start_pending_url(message, relevant_urls[0], names, delete_original=delete_original)
@@ -948,12 +1002,13 @@ async def _trigger_url(pending: PendingURL, message: discord.Message):
         pending.timer_task.cancel()
     _pending_urls.pop(pending.message_id, None)
 
-    # Reititä URL normaaliin käsittelyyn (YouTube, IG, X, TikTok, Twitch)
+    # Reititä URL normaaliin käsittelyyn.
     from downloaders.youtube import is_youtube
     from downloaders.instagram import is_instagram
     from downloaders.x import is_x
     from downloaders.tiktok import is_tiktok
     from downloaders.twitch import is_twitch
+    from downloaders.soundcloud import is_soundcloud
 
     url = pending.url
     del_orig = pending.delete_original
@@ -969,6 +1024,8 @@ async def _trigger_url(pending: PendingURL, message: discord.Message):
             await handle_tiktok(message, url, delete_original=del_orig)
         elif is_twitch(url):
             await handle_twitch(message, url, delete_original=del_orig)
+        elif is_soundcloud(url):
+            await handle_soundcloud(message, url, delete_original=del_orig)
         else:
             await message.reply("⚠️ Tuntuma URL ei ole tunnistettu.", delete_after=REPLY_DELETE_AFTER)
     except Exception as e:

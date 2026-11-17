@@ -1,6 +1,6 @@
 # DiscordBot (Bogos Binted)
 
-Bogos Binted on Pythonilla tehty Discord-botti, joka käsittelee kuvia ja medialinkkejä yksityisviesteissä ja määritetyllä palvelinkanavalla. Botti lataa mediaa YouTubesta, Instagramista, X:stä, TikTokista ja Twitchistä, pakkaa tarvittaessa videoita ja lähettää tuloksen Discordiin. Kuvia voi myös tulostaa Windowsissa emoji-reaktiolla.
+Bogos Binted on Pythonilla tehty Discord-botti, joka käsittelee kuvia ja medialinkkejä yksityisviesteissä ja määritetyllä palvelinkanavalla. Botti lataa mediaa YouTubesta, Instagramista, X:stä, TikTokista, Twitchistä ja SoundCloudista, pakkaa tarvittaessa videoita ja lähettää tuloksen Discordiin. SoundCloudista voi ladata yksittäisiä kappaleita MP3-tiedostoina. Kuvia voi myös tulostaa Windowsissa emoji-reaktiolla.
 
 ## Asennus ja käynnistys
 
@@ -43,7 +43,7 @@ Lähetä botille tuettu medialinkki tai kuva yksityisviestinä tai määritetyll
 
 ## Valinnaiset asetukset
 
-Ominaisuuksia voi säätää `.env`-tiedostossa. `ENABLE_IMAGE_PRINTING=false` poistaa tulostuksen käytöstä. Tulostus käyttää Windowsin tulostinajuria, ja tulostimen nimi määritetään `config.py`-tiedostossa. `ENABLE_VIDEO_COMPRESS=false` poistaa videopakkauksen käytöstä, ja `VIDEO_COMPRESS_TARGET_MB` määrittää pakkauksen tavoitekoon megatavuina.
+Ominaisuuksia voi säätää `.env`-tiedostossa. `ENABLE_SOUNDCLOUD=false` poistaa SoundCloud-lataukset käytöstä. `ENABLE_IMAGE_PRINTING=false` poistaa tulostuksen käytöstä. Tulostus käyttää Windowsin tulostinajuria, ja tulostimen nimi määritetään `config.py`-tiedostossa. `ENABLE_VIDEO_COMPRESS=false` poistaa videopakkauksen käytöstä, ja `VIDEO_COMPRESS_TARGET_MB` määrittää pakkauksen tavoitekoon megatavuina.
 
 Botin tunnus, käyttäjäasetukset, viestiseuranta ja lokit tallentuvat paikallisesti. `.gitignore` rajaa ne versionhallinnan ulkopuolelle.
 
