@@ -2,6 +2,7 @@
 import asyncio
 import io
 import os
+import random
 import re
 import subprocess
 import sys
@@ -17,7 +18,10 @@ from static_ffmpeg import run
 from core.logging import log
 from downloaders.base import finalize
 
-_ARTWORK_URL = re.compile(r"https://[a-z0-9-]+\.sndcdn\.com/", re.IGNORECASE)
+_ARTWORK_URL = re.compile(
+    r"https://(?:[a-z0-9-]+\.sndcdn\.com|cdn\.discordapp\.com|media\.discordapp\.net)/",
+    re.IGNORECASE,
+)
 _MAX_ARTWORK_BYTES = 5 * 1024 * 1024
 _FRAME_SIZE = 640
 _INTRO_SECONDS = 5
@@ -135,17 +139,28 @@ def _encode_video(command: list[str], envelopes: tuple[array, ...]) -> None:
             raise subprocess.CalledProcessError(returncode, command, stderr=errors.read())
 
 
-def _render_video(
-    audio_path: str, artwork: bytes, title: str, artist: str, file_limit: int
-) -> str | None:
-    with Image.open(io.BytesIO(artwork)) as image:
-        if image.width * image.height > 16_000_000:
-            return None
-        cover = ImageOps.pad(
-            ImageOps.exif_transpose(image).convert("RGB"),
-            (_FRAME_SIZE, _FRAME_SIZE),
-            color="#17171b",
+def _fallback_cover() -> Image.Image:
+    size = 800
+    colors = [tuple(random.randint(32, 220) for _ in range(3)) for _ in range(5)]
+    cover = Image.new("RGB", (size, size), colors[0])
+    draw = ImageDraw.Draw(cover)
+    for index, color in enumerate(colors[1:], start=1):
+        offset = index * 180
+        draw.polygon(
+            [(offset - 370, 0), (offset, 0), (offset + 390, size), (offset - 10, size)],
+            fill=color,
         )
+    return cover
+
+
+def _render_video(
+    audio_path: str, artwork: Image.Image | None, title: str, artist: str, file_limit: int
+) -> str | None:
+    cover = ImageOps.pad(
+        artwork if artwork is not None else _fallback_cover(),
+        (_FRAME_SIZE, _FRAME_SIZE),
+        color="#17171b",
+    )
 
     intro = cover.copy()
     draw = ImageDraw.Draw(intro, "RGBA")
@@ -179,21 +194,43 @@ def _render_video(
             ],
             envelopes,
         )
-        if os.path.getsize(video_path) > file_limit:
+        video_size = os.path.getsize(video_path)
+        if video_size > file_limit:
+            log.info("SoundCloud-video ylittää tiedostorajan: %d > %d tavua", video_size, file_limit)
             return None
         return finalize(str(video_path), "soundcloud")
 
 
+def _decode_artwork(data: bytes) -> Image.Image | None:
+    with Image.open(io.BytesIO(data)) as image:
+        if image.width * image.height <= 16_000_000:
+            return ImageOps.exif_transpose(image).convert("RGB")
+    return None
+
+
 async def make_soundcloud_video(
-    audio_path: str, artwork_url: str, title: str, artist: str, file_limit: int
+    audio_path: str, artwork_url: str, title: str, artist: str, file_limit: int,
+    *, avatar_url: str = "",
 ) -> str | None:
+    cover = None
+    # yt-dlp antaa SoundCloud-julkaisijan avatarin thumbnailina, jos kansikuva puuttuu.
+    for url in (artwork_url, avatar_url):
+        if not url:
+            continue
+        try:
+            artwork = await _fetch_artwork(url)
+            if artwork:
+                cover = await asyncio.to_thread(_decode_artwork, artwork)
+        except (aiohttp.ClientError, OSError, ValueError, TimeoutError, Image.DecompressionBombError):
+            log.debug("SoundCloud-videon kuvaa ei voitu käyttää", exc_info=True)
+        if cover is not None:
+            break
+
     try:
-        artwork = await _fetch_artwork(artwork_url)
-        if artwork:
-            return await asyncio.to_thread(
-                _render_video, audio_path, artwork, title, artist, file_limit
-            )
-    except (aiohttp.ClientError, OSError, ValueError, TimeoutError,
-            subprocess.SubprocessError, Image.DecompressionBombError):
+        return await asyncio.to_thread(_render_video, audio_path, cover, title, artist, file_limit)
+    except subprocess.CalledProcessError as error:
+        details = (error.stderr or b"").decode(errors="replace")
+        log.error("SoundCloud-videon FFmpeg-virhe (%s): %s", error.returncode, details[-1000:])
+    except (OSError, ValueError, subprocess.TimeoutExpired):
         log.exception("SoundCloud-kansikuvavideon luonti epäonnistui")
     return None

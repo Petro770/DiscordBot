@@ -625,10 +625,11 @@ async def handle_soundcloud(
     video_path = None
     try:
         limit = _effective_file_limit(message)
-        if not audio_only and config.ENABLE_SOUNDCLOUD_VIDEO and result.artwork_url:
+        if not audio_only and config.ENABLE_SOUNDCLOUD_VIDEO:
             await sender._update_status("🎵 Tehdään kansikuvavideo...")
             video_path = await make_soundcloud_video(
-                result.filepath, result.artwork_url, result.title, result.uploader, limit
+                result.filepath, result.artwork_url, result.title, result.uploader, limit,
+                avatar_url=str(message.author.display_avatar.with_size(1024).url),
             )
 
         filepath = video_path or result.filepath
