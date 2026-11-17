@@ -14,6 +14,9 @@ from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QMimeData, QObject, QProcess, QProcessEnvironment, QSettings, QThread, QUrl, pyqtSignal, pyqtSlot
 
 from tools.clipboard_download import MAX_FILE_BYTES, clipboard_url
+from tools.notification_sounds import NotificationSounds
+from tools.download_progress import ProgressReader
+from tools.download_progress_widget import DownloadProgressWidget
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
@@ -145,6 +148,7 @@ class BotManagerApp(QMainWindow):
         self.setWindowTitle("Bot-Hallintapaneeli")
         self.setGeometry(100, 100, 500, 350)
         self.setup_ui()
+        self.notification_sounds = NotificationSounds(self.settings, self)
 
         self.discord_client = create_bot()
         self.print_queue = PrintQueue()
@@ -162,7 +166,9 @@ class BotManagerApp(QMainWindow):
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("PYTHONIOENCODING", "utf-8")
         self.download_process.setProcessEnvironment(environment)
-        self.download_process.setStandardOutputFile(QProcess.nullDevice())
+        self._progress_reader = ProgressReader()
+        self.download_process.readyReadStandardOutput.connect(self._read_download_progress)
+        self.download_process.started.connect(lambda: self.notification_sounds.play("started"))
         self.download_process.finished.connect(self._download_finished)
         self.download_process.errorOccurred.connect(self._download_error)
         self._download_dir = None
@@ -216,9 +222,26 @@ class BotManagerApp(QMainWindow):
             lambda enabled: self.settings.setValue("clipboard/soundcloudVideo", enabled)
         )
         layout.addWidget(self.soundcloud_video_checkbox)
+        self.soundcloud_settings_button = QPushButton("SoundCloud-videon asetukset…")
+        self.soundcloud_settings_button.clicked.connect(self._open_soundcloud_settings)
+        layout.addWidget(self.soundcloud_settings_button)
+        self.notification_sounds_checkbox = QCheckBox("Leikepöytälatausten äänimerkit")
+        self.notification_sounds_checkbox.setChecked(
+            self.settings.value("clipboard/notificationSounds", True, type=bool)
+        )
+        self.notification_sounds_checkbox.toggled.connect(
+            lambda enabled: self.settings.setValue("clipboard/notificationSounds", enabled)
+        )
+        layout.addWidget(self.notification_sounds_checkbox)
+        self.download_progress = DownloadProgressWidget(self)
+        layout.addWidget(self.download_progress)
         self.download_status = QLabel()
         self.download_status.setWordWrap(True)
         layout.addWidget(self.download_status)
+
+    def _open_soundcloud_settings(self):
+        from tools.soundcloud_settings_dialog import SoundCloudSettingsDialog
+        SoundCloudSettingsDialog(self.settings, self).exec_()
 
     def _clipboard_toggled(self, enabled):
         self._last_url = None
@@ -240,27 +263,42 @@ class BotManagerApp(QMainWindow):
         self._last_url = url
         self._download_dir = PROJECT_DIR / "clipboard_downloads" / uuid4().hex
         self.download_status.setText("Ladataan mediaa…")
+        self._progress_reader = ProgressReader()
+        self.download_progress.begin()
         python = Path(sys.executable)
         if python.name.lower() == "pythonw.exe" and python.with_name("python.exe").is_file():
             python = python.with_name("python.exe")
-        arguments = ["-m", "tools.clipboard_download", url, str(self._download_dir)]
+        arguments = ["-m", "tools.clipboard_download", url, str(self._download_dir), "--progress"]
         if not self.soundcloud_video_checkbox.isChecked():
             arguments.append("--soundcloud-mp3")
+        arguments.extend([
+            "--soundcloud-video-settings",
+            self.settings.value("clipboard/soundcloudVideoSettings", "{}"),
+        ])
         self.download_process.start(str(python), arguments)
 
+    def _read_download_progress(self):
+        chunk = bytes(self.download_process.readAllStandardOutput())
+        for event in self._progress_reader.feed(chunk):
+            self.download_progress.update_progress(event)
+
     def _download_finished(self, exit_code, exit_status):
+        self._read_download_progress()
         errors = bytes(self.download_process.readAllStandardError()).decode("utf-8", errors="replace")
         if exit_code == 0 and exit_status == QProcess.NormalExit:
             files = list(self._download_dir.glob("media.*"))
             if len(files) == 1 and files[0].is_file() and 0 < files[0].stat().st_size <= MAX_FILE_BYTES:
+                self.download_progress.finish(True)
                 if not self.clipboard_checkbox.isChecked():
                     self.download_status.setText(f"Lataus tallennettu kansioon {self._download_dir.name}.")
+                    self.notification_sounds.play("finished")
                     return
                 data = QMimeData()
                 data.setUrls([QUrl.fromLocalFile(str(files[0]))])
                 self.clipboard.setMimeData(data)
                 message = "Tiedosto on leikepöydällä. Liitä Discordiin painamalla Ctrl+V."
                 self.download_status.setText(message)
+                self.notification_sounds.play("finished")
                 self.tray_icon.showMessage("Lataus valmis", message)
                 return
         self._last_url = None
@@ -269,14 +307,19 @@ class BotManagerApp(QMainWindow):
              if line.startswith("LATAUSVIRHE=")),
             "Medialataus epäonnistui.",
         )
+        self._report_download_failure(message)
+
+    def _report_download_failure(self, message):
+        self.download_progress.finish(False)
         self.download_status.setText(message)
         self._append_log(message)
+        self.notification_sounds.play("error")
         self.tray_icon.showMessage("Lataus epäonnistui", message)
 
     def _download_error(self, error):
         if error == QProcess.FailedToStart:
             self._last_url = None
-            self.download_status.setText("Latausprosessia ei voitu käynnistää.")
+            self._report_download_failure("Latausprosessia ei voitu käynnistää.")
 
     def _append_log(self, message: str):
         """Ainoa paikka, missä QTextEditiin kirjoitetaan."""

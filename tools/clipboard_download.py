@@ -1,5 +1,10 @@
 """GUI:n leikepöytälatausten taustaprosessi."""
+from tools.download_progress import report, enable_stdout_progress
+
+import argparse
 import asyncio
+
+from tools.soundcloud_video_settings import SoundCloudVideoSettings
 import shutil
 import sys
 from pathlib import Path
@@ -29,10 +34,12 @@ def clipboard_url(text: str) -> str | None:
     return None
 
 
-async def download_media(url: str, destination: Path, soundcloud_video: bool = True) -> Path:
+async def download_media(url: str, destination: Path, soundcloud_video: bool = True,
+                         video_settings: SoundCloudVideoSettings | None = None) -> Path:
     if clipboard_url(url) != url:
         raise ValueError("Kopioi tuettu medialinkki.")
 
+    report("prepare", "Alustetaan medialatausta…")
     from downloaders import (
         download_instagram, download_tiktok, download_twitch, download_video, download_x,
         is_instagram, is_tiktok, is_twitch, is_x, is_youtube,
@@ -47,7 +54,12 @@ async def download_media(url: str, destination: Path, soundcloud_video: bool = T
     loader = next((download for matches, download in routes if matches(url)), None)
     if loader is None:
         raise ValueError("Linkistä ei tunnistettu tuettua mediaa.")
-    media = await loader(url)
+    video_settings = video_settings or SoundCloudVideoSettings()
+    if is_soundcloud(url):
+        media = await loader(url, audio_kbps=video_settings.audio_kbps if soundcloud_video else 128)
+    else:
+        report("download", "Ladataan mediaa palvelusta…")
+        media = await loader(url)
     if media is None:
         raise ValueError("Mediaa ei saatu ladattua.")
 
@@ -59,6 +71,7 @@ async def download_media(url: str, destination: Path, soundcloud_video: bool = T
 
             video_path = await make_soundcloud_video(
                 str(original), media.artwork_url, media.title, media.uploader, MAX_FILE_BYTES,
+                settings=video_settings,
             )
             if video_path is None:
                 raise ValueError("SoundCloud-aaltomuotovideon luonti epäonnistui.")
@@ -69,12 +82,14 @@ async def download_media(url: str, destination: Path, soundcloud_video: bool = T
                 from tools.vid_compress import compress_to_720p
 
                 source = Path(folder) / "compressed.mp4"
+                report("compress", "Pakataan videota kokorajaan…")
                 compress_to_720p(
                     str(original.resolve()), str(source), target_size_mb=140,
                     passlog_prefix=str(Path(folder) / "ffmpeg2pass"),
                 )
             if not 0 < source.stat().st_size <= MAX_FILE_BYTES:
                 raise ValueError("Tiedosto on tyhjä tai ylittää 150 MB:n rajan.")
+            report("save", "Tarkistetaan ja tallennetaan valmis tiedosto…")
             destination.mkdir(parents=True)
             output = destination / f"media{source.suffix}"
             shutil.move(source, output)
@@ -86,9 +101,20 @@ async def download_media(url: str, destination: Path, soundcloud_video: bool = T
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("url")
+    parser.add_argument("destination", type=Path)
+    parser.add_argument("--soundcloud-mp3", action="store_true")
+    parser.add_argument("--soundcloud-video-settings", default="{}")
+    parser.add_argument("--progress", action="store_true")
+    args = parser.parse_args()
+    if args.progress:
+        enable_stdout_progress()
+        report("prepare", "Luetaan latausasetuksia…")
     try:
         asyncio.run(download_media(
-            sys.argv[1], Path(sys.argv[2]), soundcloud_video="--soundcloud-mp3" not in sys.argv[3:],
+            args.url, args.destination, soundcloud_video=not args.soundcloud_mp3,
+            video_settings=SoundCloudVideoSettings.from_json(args.soundcloud_video_settings),
         ))
     except Exception as error:
         print(f"LATAUSVIRHE={getattr(error, 'user_facing', '') or str(error)}", file=sys.stderr)

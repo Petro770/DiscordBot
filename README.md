@@ -14,7 +14,7 @@ Tarvitset Python 3.10:n tai uudemman sekä Discord-sovelluksen, jolle on luotu b
 
 2. Ota Discord Developer Portalissa botin **Message Content Intent** käyttöön. Jos käytät bottia palvelimella, kutsu se palvelimelle ja anna sille kohdekanavalla oikeudet nähdä kanava, lukea viestihistoriaa, lähettää viestejä ja liitteitä sekä lisätä reaktioita. `POISTA` tarvitsee palvelinkanavalla myös **Manage Messages** -oikeuden.
 
-3. Luo projektin juureen `.env` ja korvaa esimerkkiarvot botin tunnuksella ja kohdekanavan tunnisteella. Botti tarkistaa kohdekanavan käynnistyessään ja käyttää sitä myös `JAA`-komennon kohteena.
+3. Kopioi [example.env](example.env) nimellä `.env` komennolla `Copy-Item example.env .env` (jos sinulla ei vielä ole `.env`-tiedostoa). Täytä botin token ja tarvittaessa kohdekanavan tunniste. Mallitiedosto sisältää kaikki projektin käyttämät ympäristöasetukset ja niiden oletusarvot. Botti tarkistaa kohdekanavan käynnistyessään ja käyttää sitä myös `JAA`-komennon kohteena.
 
    ```dotenv
    DISCORD_TOKEN=oma_botin_token
@@ -116,3 +116,80 @@ poiston käyttöön. `off` poistaa ajastamattomien viestien haun käytöstä.
 Poistoaika lasketaan Discordin lähetysajasta. Jo yli vuorokauden ikäiset
 ehdokkaat erääntyvät heti, ja aiemmin asetetut poistoajat säilyvät.
 Botilla pitää olla kanavalla viestihistorian lukuoikeus.
+
+## GUI:n SoundCloud-videoasetukset
+
+Avaa hallintapaneelista **SoundCloud-videon asetukset…**. Ikkunasta voi säätää
+FPS-tavoitetta (1–60), neliövideon resoluutiota (320–1920 px), äänen bittinopeutta
+(48–320 kbit/s), CRF-laatua, enkoodausnopeutta, taajuuskaistojen määrää (1–30),
+otsikon näyttöaikaa, viivan paksuutta (1–12 px), aaltomuodon taustan peittävyyttä, aaltojen korkeutta ja
+aikaikkunaa sekä renderöinnin aikarajaa ja automaattista pakkausta.
+
+**Tallenna** ottaa asetukset käyttöön seuraavassa leikepöytälatauksessa ja säilyttää
+ne myös uudelleenkäynnistyksessä. **Peruuta** hylkää muutokset; **Palauta oletukset**
+palauttaa alkuperäiset arvot lomakkeeseen, jonka jälkeen ne voi tallentaa.
+Asetukset koskevat GUI:n leikepöytälatauksia. Äänen laatua rajoittaa myös lähde.
+Jos video ylittää 150 MB:n rajan, automaattinen pakkaus voi laskea resoluutiota ja
+bittinopeuksia. Ilman automaattista pakkausta kokorajan ylittävä lataus epäonnistuu.
+
+Aaltomuodon piirto käyttää reunojen pehmennystä, näytteiden välistä interpolointia
+ja FPS:n mukaan säätyvää suodatusta välkkymisen vähentämiseksi. Uusien asetusten
+FPS-oletus on 30. Jos olet tallentanut aiemmin 15 FPS:n asetuksen, vaihda se
+asetusikkunasta 30:een tai 60:een saadaksesi sulavamman liikkeen.
+
+Aaltomuodot piirretään vain yläreunan viivoina ilman täyttöä tai alapuolista
+peilausta. Viivan paikallinen peittävyys seuraa taajuuskaistan voimakkuutta;
+hiljaiset kohdat jäävät himmeiksi. Hillitty väripaletti poimitaan kansikuvasta,
+bassoa sävytetään punertavaksi ja korkeita taajuuksia viileämmiksi.
+
+Aaltomuotoalue kattaa koko videon leveyden. Viivat häipyvät läpinäkyviksi ulomman 10 %:n matkalla kummassakin reunassa. Taustapaneeli on oletuksena pois käytöstä; sen voi kytkeä päälle SoundCloud-videon asetuksista ja säätää peittävyyttä.
+
+Viivan paksuus määritetään 640 px:n peruskoossa ja skaalautuu videon mukana.
+Kaistamäärä tukee myös yli kahdeksaa bändiä: analyysi ei käytä kaiutinkanavien
+asettelua. Suuri kaistamäärä kasvattaa analyysin muistinkäyttöä ja renderöintiaikaa.
+
+Kaistojen pystysijoittelu huomioi aaltojen enimmäiskorkeuden ja viivan paksuuden,
+jotta myös basson huiput mahtuvat piirtoalueelle 30 bändillä. Viivojen peittävyyttä
+on nostettu noin 30 % ja voimakkuusvaste käyttää neliöjuurikäyrää, jolloin myös
+hiljaisempi ääni erottuu selvemmin; voimakkaimmat kohdat ovat täysin peittäviä.
+
+## Leikepöytälatausten äänimerkit
+
+GUI toistaa omat lyhyet WAV-äänimerkit, kun leikepöydältä käynnistetty lataus
+alkaa, valmistuu tai epäonnistuu. Ne toimivat myös ikkunan ollessa piilossa.
+Virhemerkki kuuluu myös silloin, kun taustaprosessia ei voida käynnistää tai se
+kaatuu. Valmismerkki kuuluu vasta, kun tiedosto on tarkistettu ja siirretty
+leikepöydälle (tai tallennettu, jos seuranta on sillä välin poistettu käytöstä).
+
+Äänet voi poistaa käytöstä hallintapaneelin **Leikepöytälatausten äänimerkit**
+-valinnasta. Valinta säilyy käyttökertojen välillä. Äänet ovat projektin omia,
+eivät käyttöjärjestelmän ilmoitusääniä. Ne löytyvät `static/sounds/`-kansiosta:
+`started.wav`, `finished.wav` ja `error.wav`. Voit vaihtaa ne omiin saman nimisiin
+PCM WAV -tiedostoihin ja käynnistää GUI:n uudelleen. Äänien toisto ei pysäytä GUI:ta.
+
+## GUI:n latauksen tilannekuva
+
+Hallintapaneeli näyttää leikepöytälatauksen nykyisen työvaiheen, kokonaisajan,
+vaiheen keston ja ajan viimeisestä tilapäivityksestä. Päättyneiden vaiheiden
+kestot säilyvät näkyvissä seuraavan latauksen alkuun asti. SoundCloudin lataus
+raportoi nopeuden, prosentit ja aika-arvion silloin, kun ne ovat saatavilla.
+Videon muodostuksessa näkyvät valmistuneet ruudut, ruutujen käsittelynopeus ja
+vaiheen etenemisprosentti. Prosentti koskee nykyistä vaihetta, ei koko latausta.
+Vaiheet ilman mitattavaa prosenttia näyttävät liikkuvan odotuspalkin. Muiden
+palvelujen verkkolataus näyttää vaihe- ja aikatiedot ilman tarkkaa prosenttia.
+
+Tilapäivitykset kulkevat taustaprosessista GUI:hin vain `--progress`-valitsimella;
+botin tavallinen toiminta ei tulosta niitä. Viimeisin päivitys -aika auttaa
+havaitsemaan pitkän odotuksen, mutta ei yksin tarkoita prosessin jumittumista.
+
+Aaltomuotojen piirto käyttää nyt renderöinnin sisäistä kuvapalavälimuistia:
+kukin aikajakso piirretään kerran ja seuraavat ruudut kootaan vierittämällä
+valmiita viivoja. Kunkin bändin muistissa säilytetään korkeintaan kolme
+1024 pikselin kuvapalaa sekä nykyinen vieritysnäkymä; koko kappaletta tai
+kaikkia videoruutuja ei varastoida kuviksi. Osapikselivieritys, reunahäivytys,
+voimakkuuteen perustuva peittävyys ja kansikuvan värit säilyvät.
+
+Renderöinnin **jumittumisraja** (oletuksena 300 s) mittaa aikaa viimeisestä
+FFmpegille syötetystä ruudusta. Edistyvä renderöinti saa kestää tätä pidempään.
+Sama raja suojaa myös viimeistelyä ruutujen syöttämisen jälkeen. Kokorajan
+lisäpakkauksen kummallakin kierroksella on edelleen asetuksen mukainen aikaraja.

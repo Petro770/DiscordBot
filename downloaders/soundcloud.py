@@ -11,6 +11,7 @@ import yt_dlp
 from static_ffmpeg import run
 
 from core.logging import log
+from tools.download_progress import report, download_hook
 from core.models import NonRetryableError, VideoInfo
 from downloaders.base import finalize
 
@@ -63,9 +64,10 @@ def _make_video(audio: Path, image: Path | None, output: Path, ffmpeg: str) -> N
     ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
 
 
-def _download_sync(url: str, as_video: bool = False) -> VideoInfo | None:
+def _download_sync(url: str, as_video: bool = False, audio_kbps: int = 128) -> VideoInfo | None:
     with tempfile.TemporaryDirectory(prefix="soundcloud_") as directory:
         audio_path = Path(directory) / "track.mp3"
+        report("prepare", "Varmistetaan FFmpeg ja haetaan kappaleen tiedot…")
         ffmpeg_path, _ = run.get_or_fetch_platform_executables_else_raise()
         options = {
             "format": "bestaudio",
@@ -74,12 +76,14 @@ def _download_sync(url: str, as_video: bool = False) -> VideoInfo | None:
             "ffmpeg_location": ffmpeg_path,
             "noplaylist": True,
             "quiet": True,
+            "progress_hooks": [download_hook()],
+            "postprocessor_hooks": [lambda data: report("audio", "Muunnetaan ladattua ääntä…")],
             "socket_timeout": 20,
             "writethumbnail": as_video,
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
-                "preferredquality": "128",
+                "preferredquality": str(audio_kbps),
             }],
         }
         with yt_dlp.YoutubeDL(options) as ydl:
@@ -118,10 +122,11 @@ def _download_sync(url: str, as_video: bool = False) -> VideoInfo | None:
         )
 
 
-async def download_soundcloud(url: str, *, as_video: bool = False) -> VideoInfo | None:
+async def download_soundcloud(url: str, *, as_video: bool = False, audio_kbps: int = 128) -> VideoInfo | None:
     try:
+        report("resolve", "Selvitetään SoundCloud-kappaleen linkkiä…")
         track_url = await _resolve_track(url)
-        return await asyncio.to_thread(_download_sync, track_url, as_video)
+        return await asyncio.to_thread(_download_sync, track_url, as_video, audio_kbps)
     except (aiohttp.ClientError, TimeoutError, yt_dlp.utils.DownloadError, OSError):
         log.exception("SoundCloud-lataus epäonnistui")
         return None
