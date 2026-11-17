@@ -42,6 +42,15 @@ IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
 # Oletussäilytys päivinä (365 = 1 vuosi)
 MESSAGE_RETENTION_DAYS = int(os.getenv("MESSAGE_RETENTION_DAYS", "365"))
 
+UNTRACKED_BOT_MESSAGE_CLEANUP_MODE = os.getenv("UNTRACKED_BOT_MESSAGE_CLEANUP_MODE", "preview").strip().lower()
+if UNTRACKED_BOT_MESSAGE_CLEANUP_MODE not in {"off", "preview", "delete"}:
+    raise ValueError("UNTRACKED_BOT_MESSAGE_CLEANUP_MODE pitää olla off, preview tai delete.")
+UNTRACKED_BOT_MESSAGE_RETENTION_HOURS = int(os.getenv("UNTRACKED_BOT_MESSAGE_RETENTION_HOURS", "24"))
+if UNTRACKED_BOT_MESSAGE_RETENTION_HOURS <= 0:
+    raise ValueError("UNTRACKED_BOT_MESSAGE_RETENTION_HOURS pitää olla positiivinen.")
+_cleanup_channel = os.getenv("UNTRACKED_BOT_MESSAGE_CHANNEL_ID", "").strip()
+UNTRACKED_BOT_MESSAGE_CHANNEL_ID = int(_cleanup_channel) if _cleanup_channel else TARGET_CHANNEL_ID
+
 # Siivousintervalli sekunteina (300 = 5 min)
 CLEANUP_INTERVAL = int(os.getenv("CLEANUP_INTERVAL", "300"))
 
@@ -62,6 +71,7 @@ ENABLE_INSTAGRAM = _env_bool("ENABLE_INSTAGRAM", default=True)
 ENABLE_X = _env_bool("ENABLE_X", default=True)
 ENABLE_TIKTOK = _env_bool("ENABLE_TIKTOK", default=True)
 ENABLE_TWITCH = _env_bool("ENABLE_TWITCH", default=True)
+ENABLE_SOUNDCLOUD = _env_bool("ENABLE_SOUNDCLOUD", default=True)
 STATUS_LOG_MODE = _env_bool("STATUS_LOG_MODE", default=True)
 ENABLE_VIDEO_COMPRESS = _env_bool("ENABLE_VIDEO_COMPRESS", default=True)
 VIDEO_COMPRESS_TARGET_MB = float(os.getenv("VIDEO_COMPRESS_TARGET_MB", "9.2"))

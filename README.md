@@ -1,6 +1,6 @@
 # DiscordBot (Bogos Binted)
 
-Bogos Binted on Pythonilla tehty Discord-botti, joka käsittelee kuvia ja medialinkkejä yksityisviesteissä ja määritetyllä palvelinkanavalla. Botti lataa mediaa YouTubesta, Instagramista, X:stä, TikTokista ja Twitchistä, pakkaa tarvittaessa videoita ja lähettää tuloksen Discordiin. Kuvia voi myös tulostaa Windowsissa emoji-reaktiolla.
+Bogos Binted on Pythonilla tehty Discord-botti, joka käsittelee kuvia ja medialinkkejä yksityisviesteissä ja määritetyllä palvelinkanavalla. Botti lataa mediaa YouTubesta, Instagramista, X:stä, TikTokista, Twitchistä ja SoundCloudista, pakkaa tarvittaessa videoita ja lähettää tuloksen Discordiin. SoundCloudista voi ladata yksittäisiä kappaleita MP3-tiedostoina. Kuvia voi myös tulostaa Windowsissa emoji-reaktiolla.
 
 ## Asennus ja käynnistys
 
@@ -43,7 +43,7 @@ Lähetä botille tuettu medialinkki tai kuva yksityisviestinä tai määritetyll
 
 ## Valinnaiset asetukset
 
-Ominaisuuksia voi säätää `.env`-tiedostossa. `ENABLE_IMAGE_PRINTING=false` poistaa tulostuksen käytöstä. Tulostus käyttää Windowsin tulostinajuria, ja tulostimen nimi määritetään `config.py`-tiedostossa. `ENABLE_VIDEO_COMPRESS=false` poistaa videopakkauksen käytöstä, ja `VIDEO_COMPRESS_TARGET_MB` määrittää pakkauksen tavoitekoon megatavuina.
+Ominaisuuksia voi säätää `.env`-tiedostossa. `ENABLE_SOUNDCLOUD=false` poistaa SoundCloud-lataukset käytöstä. `ENABLE_IMAGE_PRINTING=false` poistaa tulostuksen käytöstä. Tulostus käyttää Windowsin tulostinajuria, ja tulostimen nimi määritetään `config.py`-tiedostossa. `ENABLE_VIDEO_COMPRESS=false` poistaa videopakkauksen käytöstä, ja `VIDEO_COMPRESS_TARGET_MB` määrittää pakkauksen tavoitekoon megatavuina.
 
 Botin tunnus, käyttäjäasetukset, viestiseuranta ja lokit tallentuvat paikallisesti. `.gitignore` rajaa ne versionhallinnan ulkopuolelle.
 
@@ -88,3 +88,21 @@ aina, ja `/duplikaatit`-haun kuvavertailun raja on 90 %.
 Varmista, että botin Discord-asennuksella on `applications.commands`-oikeus.
 Liitteet ladataan väliaikaisesti sormenjälkien laskemista varten.
 `Channels/attachments.sqlite3` sisältää indeksin ja historiaskannauksen etenemisen.
+
+## Botin ajastamattomien kanavaviestien siivous
+
+Taustasiivous etsii botin omia viestejä, joilta puuttuu JSONissa poistoaika.
+Oletuksena käytetään `TARGET_CHANNEL_ID`-kanavaa. Esikatselu kirjaa lokiin
+ehdokkaiden määrän ja erääntyneiden viestien tunnisteet.
+
+```dotenv
+UNTRACKED_BOT_MESSAGE_CLEANUP_MODE=preview
+UNTRACKED_BOT_MESSAGE_RETENTION_HOURS=24
+# UNTRACKED_BOT_MESSAGE_CHANNEL_ID=123456789012345678
+```
+
+Vaihda tila arvoon `delete` ja käynnistä botti uudelleen, kun haluat ottaa
+poiston käyttöön. `off` poistaa ajastamattomien viestien haun käytöstä.
+Poistoaika lasketaan Discordin lähetysajasta. Jo yli vuorokauden ikäiset
+ehdokkaat erääntyvät heti, ja aiemmin asetetut poistoajat säilyvät.
+Botilla pitää olla kanavalla viestihistorian lukuoikeus.

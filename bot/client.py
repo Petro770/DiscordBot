@@ -14,6 +14,7 @@ from bot.handlers import (
 from bot.attachments import ChannelAttachments
 from core.logging import log
 from core.queue import init_queue
+from user.tracker import start_cleanup_task, track_unscheduled_message
 
 
 def create_bot() -> discord.Client:
@@ -81,8 +82,9 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
         bot._cleanup_task = asyncio.create_task(_periodic_cleanup())
 
         # 3) Viestien automaattinen poisto (UUSI)
-        from user.tracker import start_cleanup_task
-        bot._msg_cleanup_task = await start_cleanup_task(bot)
+        task = getattr(bot, "_msg_cleanup_task", None)
+        if task is None or task.done():
+            bot._msg_cleanup_task = await start_cleanup_task(bot)
 
         # 4) Kanavan varmistus (ei estä käynnistystä)
         channel = bot.get_channel(TARGET_CHANNEL_ID)
@@ -99,6 +101,8 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
 
     @bot.event
     async def on_message(message: discord.Message):
+        if message.author.bot:
+            track_unscheduled_message(bot, message)
         if message.guild and message.attachments and message.channel.id in attachments.channels:
             await asyncio.gather(index_attachments(message), route_incoming(message))
         else:

@@ -57,7 +57,7 @@ def parse_help_command(text: str) -> str | None:
 HELP_GENERAL = """👽 **Bogos Binted – Ohje**
 
 **Videot & kuvat:**
-Lähetä linkki (YouTube, Instagram, X, TikTok, Twitch) tai kuva → bot lataa ja lähettää tiedoston.
+Lähetä linkki (YouTube, Instagram, X, TikTok, Twitch, SoundCloud) tai kuva → bot lataa ja lähettää tiedoston.
 
 **Komennot:**
 • `POISTA` – poista alkuperäinen viesti käsittelyn jälkeen
