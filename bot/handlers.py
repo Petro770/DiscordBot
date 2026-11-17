@@ -608,6 +608,8 @@ async def handle_soundcloud(
     from downloaders.soundcloud import download_soundcloud
     from tools.soundcloud_video import make_soundcloud_video
 
+    video_requested = not audio_only and config.ENABLE_SOUNDCLOUD_VIDEO
+    log.info("SoundCloud [%d]: pyydetty muoto %s", message.id, "MP4" if video_requested else "MP3")
     await _changelog_notify(message)
     sender = Send(message, delete_original, forward_channel_id=forward_channel_id)
     await sender.send_status("🎵 Ladataan SoundCloud-kappaletta...")
@@ -625,17 +627,21 @@ async def handle_soundcloud(
     video_path = None
     try:
         limit = _effective_file_limit(message)
-        if not audio_only and config.ENABLE_SOUNDCLOUD_VIDEO:
+        if video_requested:
             await sender._update_status("🎵 Tehdään kansikuvavideo...")
             video_path = await make_soundcloud_video(
                 result.filepath, result.artwork_url, result.title, result.uploader, limit,
                 avatar_url=str(message.author.display_avatar.with_size(1024).url),
+                message_id=message.id,
             )
+            if video_path is None:
+                log.warning("SoundCloud [%d]: MP4 ei valmistunut lähetykseen, käytetään MP3:a", message.id)
 
         filepath = video_path or result.filepath
         filename = os.path.splitext(result.filename)[0] + ".mp4" if video_path else result.filename
         size = os.path.getsize(filepath)
         if size > limit:
+            log.warning("SoundCloud [%d]: liite ylittää kokorajan (%d > %d tavua)", message.id, size, limit)
             await sender.send(
                 f"⚠️ Äänitiedosto ylittää Discordin kokorajan "
                 f"({size / 1024**2:.1f} / {limit / 1024**2:.1f} Mt).",
@@ -646,13 +652,23 @@ async def handle_soundcloud(
         content = f"🎵 {result.format_message()}" if should_include_content(message.author.id) else ""
         file = discord.File(filepath, filename=filename)
         try:
+            log.info(
+                "SoundCloud [%d]: %s Discord-lähetysjonoon (%d tavua, raja %d)",
+                message.id, "MP4" if video_path else "MP3", size, limit,
+            )
             sent = await sender.send(content, file=file)
         finally:
             file.close()
         if sent is not None:
+            log.info("SoundCloud [%d]: Discord hyväksyi liitteen (vastaus %d)", message.id, sent.id)
             await sender.delete_original()
-    except discord.HTTPException:
-        log.exception("SoundCloud-tiedoston lähettäminen epäonnistui")
+        else:
+            log.warning("SoundCloud [%d]: lähetysjono ei palauttanut vastausviestiä", message.id)
+    except discord.HTTPException as error:
+        log.exception(
+            "SoundCloud [%d]: Discord-pyyntö epäonnistui (HTTP %d, koodi %d)",
+            message.id, error.status, error.code,
+        )
         await sender.send("⚠️ Äänitiedoston lähettäminen epäonnistui.", delete_after=REPLY_DELETE_AFTER)
     finally:
         if video_path:
@@ -1084,7 +1100,7 @@ async def check_url_reaction(reaction: discord.RawReactionActionEvent) -> bool:
     if pending.timer_task:
         pending.timer_task.cancel()
 
-    log.info("🎬 URL-reaktio saatu: viesti=%d, url=%s", reaction.message_id, pending.url[:60])
+    log.info("URL-reaktio saatu: viesti=%d, emoji=%s", reaction.message_id, emoji_str)
 
     try:
         channel = _bot.get_channel(pending.channel_id)

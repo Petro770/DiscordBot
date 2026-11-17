@@ -10,6 +10,7 @@ import tempfile
 from array import array
 from pathlib import Path
 from threading import Timer
+from time import monotonic
 
 import aiohttp
 from PIL import Image, ImageDraw, ImageFont, ImageOps
@@ -118,22 +119,43 @@ def _wave_frames(envelopes: tuple[array, ...]):
         yield frame.tobytes()
 
 
-def _encode_video(command: list[str], envelopes: tuple[array, ...]) -> None:
+def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: int | None) -> None:
     with tempfile.TemporaryFile() as errors, subprocess.Popen(
         command, stdin=subprocess.PIPE, stderr=errors, creationflags=_NO_CONSOLE,
     ) as ffmpeg:
         # Aikaraja koskee myös ruutujen syöttämistä putkeen.
-        watchdog = Timer(300, ffmpeg.kill)
+        def stop_timed_out_encode():
+            if ffmpeg.poll() is None:
+                log.error("SoundCloud-video [%s]: FFmpeg-renderöinnin 300 s aikaraja", message_id)
+                ffmpeg.kill()
+
+        watchdog = Timer(300, stop_timed_out_encode)
+        started = last_update = monotonic()
+        frames_written = 0
+        log.info("SoundCloud-video [%s]: FFmpeg käynnistyi (PID %d)", message_id, ffmpeg.pid)
         watchdog.start()
         try:
             with ffmpeg.stdin as frames:
                 for frame in _wave_frames(envelopes):
                     frames.write(frame)
+                    frames_written += 1
+                    now = monotonic()
+                    if now - last_update >= 15:
+                        log.info(
+                            "SoundCloud-video [%s]: FFmpegille syötetty %.1f s videota (kestänyt %.1f s)",
+                            message_id, frames_written / _VIDEO_FPS, now - started,
+                        )
+                        last_update = now
+            log.info("SoundCloud-video [%s]: ruudut syötetty, odotetaan MP4:n viimeistelyä", message_id)
         except BrokenPipeError:
-            pass
+            log.warning("SoundCloud-video [%s]: FFmpeg sulki ruutuputken", message_id)
         finally:
             returncode = ffmpeg.wait()
             watchdog.cancel()
+        log.info(
+            "SoundCloud-video [%s]: FFmpeg päättyi %.1f s jälkeen (koodi %d, %d ruutua)",
+            message_id, monotonic() - started, returncode, frames_written,
+        )
         if returncode:
             errors.seek(0)
             raise subprocess.CalledProcessError(returncode, command, stderr=errors.read())
@@ -154,7 +176,8 @@ def _fallback_cover() -> Image.Image:
 
 
 def _render_video(
-    audio_path: str, artwork: Image.Image | None, title: str, artist: str, file_limit: int
+    audio_path: str, artwork: Image.Image | None, title: str, artist: str, file_limit: int,
+    message_id: int | None,
 ) -> str | None:
     cover = ImageOps.pad(
         artwork if artwork is not None else _fallback_cover(),
@@ -168,8 +191,14 @@ def _render_video(
     _draw_line(draw, title or "SoundCloud", 528, 33, "#ffffff")
     _draw_line(draw, artist, 581, 23, "#ffad86")
 
+    log.info("SoundCloud-video [%s]: haetaan FFmpeg ja analysoidaan taajuuskaistat", message_id)
     ffmpeg, _ = run.get_or_fetch_platform_executables_else_raise()
+    started = monotonic()
     envelopes = _read_envelopes(ffmpeg, audio_path)
+    log.info(
+        "SoundCloud-video [%s]: analyysi valmis %.1f sekunnissa, äänen kesto %.1f s",
+        message_id, monotonic() - started, len(envelopes[0]) / _ENVELOPE_HZ,
+    )
     with tempfile.TemporaryDirectory(prefix="soundcloud_video_") as directory:
         cover_path = Path(directory) / "cover.png"
         intro_path = Path(directory) / "intro.png"
@@ -192,12 +221,16 @@ def _render_video(
                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
                 "-movflags", "+faststart", str(video_path),
             ],
-            envelopes,
+            envelopes, message_id,
         )
         video_size = os.path.getsize(video_path)
         if video_size > file_limit:
-            log.info("SoundCloud-video ylittää tiedostorajan: %d > %d tavua", video_size, file_limit)
+            log.warning(
+                "SoundCloud-video [%s]: MP4 ylittää tiedostorajan (%d > %d tavua)",
+                message_id, video_size, file_limit,
+            )
             return None
+        log.info("SoundCloud-video [%s]: MP4 valmis (%d tavua, raja %d)", message_id, video_size, file_limit)
         return finalize(str(video_path), "soundcloud")
 
 
@@ -210,27 +243,32 @@ def _decode_artwork(data: bytes) -> Image.Image | None:
 
 async def make_soundcloud_video(
     audio_path: str, artwork_url: str, title: str, artist: str, file_limit: int,
-    *, avatar_url: str = "",
+    *, avatar_url: str = "", message_id: int | None = None,
 ) -> str | None:
     cover = None
     # yt-dlp antaa SoundCloud-julkaisijan avatarin thumbnailina, jos kansikuva puuttuu.
-    for url in (artwork_url, avatar_url):
+    for source, url in (("SoundCloud-kuva", artwork_url), ("Discord-avatar", avatar_url)):
         if not url:
             continue
+        log.info("SoundCloud-video [%s]: haetaan %s", message_id, source)
         try:
             artwork = await _fetch_artwork(url)
             if artwork:
                 cover = await asyncio.to_thread(_decode_artwork, artwork)
         except (aiohttp.ClientError, OSError, ValueError, TimeoutError, Image.DecompressionBombError):
-            log.debug("SoundCloud-videon kuvaa ei voitu käyttää", exc_info=True)
+            log.debug("SoundCloud-video [%s]: kuvaa ei voitu käyttää", message_id, exc_info=True)
         if cover is not None:
+            log.info("SoundCloud-video [%s]: käytetään lähdettä %s (%dx%d)", message_id, source, *cover.size)
             break
+        log.info("SoundCloud-video [%s]: %s ei ollut käytettävissä", message_id, source)
 
+    if cover is None:
+        log.info("SoundCloud-video [%s]: piirretään varakuva", message_id)
     try:
-        return await asyncio.to_thread(_render_video, audio_path, cover, title, artist, file_limit)
+        return await asyncio.to_thread(_render_video, audio_path, cover, title, artist, file_limit, message_id)
     except subprocess.CalledProcessError as error:
         details = (error.stderr or b"").decode(errors="replace")
-        log.error("SoundCloud-videon FFmpeg-virhe (%s): %s", error.returncode, details[-1000:])
+        log.error("SoundCloud-video [%s]: FFmpeg-virhe (%s): %s", message_id, error.returncode, details[-1000:])
     except (OSError, ValueError, subprocess.TimeoutExpired):
-        log.exception("SoundCloud-kansikuvavideon luonti epäonnistui")
+        log.exception("SoundCloud-video [%s]: luonti epäonnistui", message_id)
     return None
