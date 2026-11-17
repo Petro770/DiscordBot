@@ -39,7 +39,10 @@ def get_media_info(input_path: str) -> tuple[float, int]:
     return duration, audio_bitrate
 
 
-def compress_to_720p(input_path: str, output_path: str, target_size_mb: float = 9.2) -> str:
+def compress_to_720p(
+    input_path: str, output_path: str, target_size_mb: float = 9.2,
+    *, passlog_prefix: str = "ffmpeg2pass",
+) -> str:
     """Kompressoi videon 720p-resoluutioon ja target-kokoon.
 
     Palauttaa tulostiedoston polun. Heittää Exception jos epäonnistuu.
@@ -59,13 +62,13 @@ def compress_to_720p(input_path: str, output_path: str, target_size_mb: float = 
         "ffmpeg", "-y", "-i", input_path,
         "-vf", "scale=-2:720",
         "-c:v", "libx264", "-b:v", str(video_bitrate),
-        "-pass", "1", "-an", "-f", "mp4", os.devnull,
+        "-pass", "1", "-passlogfile", passlog_prefix, "-an", "-f", "mp4", os.devnull,
     ]
     pass2_cmd = [
         "ffmpeg", "-y", "-i", input_path,
         "-vf", "scale=-2:720",
         "-c:v", "libx264", "-b:v", str(video_bitrate),
-        "-pass", "2",
+        "-pass", "2", "-passlogfile", passlog_prefix,
         "-c:a", "copy",
         "-movflags", "+faststart",
         output_path,
