@@ -33,9 +33,9 @@ _WAVE_HEIGHT = 112
 _NO_CONSOLE = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # Taajuuskaista, näkyvä historia (s), pystysijainti, väri ja viivan leveys.
 _WAVE_BANDS = (
-    ("highpass=f=2500", 3.4, 36, (109, 225, 255, 200), 2),
+    ("lowpass=f=220", 3.4, 36, (255, 153, 82, 200), 2),
     ("highpass=f=220,lowpass=f=2500", 2.4, 56, (221, 148, 255, 220), 2),
-    ("lowpass=f=220", 1.5, 76, (255, 153, 82, 255), 3),
+    ("highpass=f=2500", 1.5, 76, (109, 225, 255, 255), 3),
 )
 
 
@@ -72,6 +72,21 @@ def _draw_line(draw, text: str, y: int, size: int, fill: str) -> None:
             text = text[:-1]
         text += "…"
     draw.text((_FRAME_SIZE // 2, y), text, font=font, fill=fill, anchor="mt")
+
+
+def _title_overlay(title: str) -> tuple[Image.Image, str]:
+    font = _font(33)
+    text = " ".join(title.split()) or "SoundCloud"
+    left, top, right, bottom = font.getbbox(text)
+    width = right - left + 4
+    image = Image.new("RGBA", (width, bottom - top + 4))
+    ImageDraw.Draw(image).text((2 - left, 2 - top), text, font=font, fill="white")
+
+    margin = 32
+    travel = width - (_FRAME_SIZE - 2 * margin)
+    if travel <= 0:
+        return image, str((_FRAME_SIZE - width) // 2)
+    return image, f"{margin}-{travel}*clip((t-0.5)/{_INTRO_SECONDS - 1},0,1)"
 
 
 def _read_envelopes(ffmpeg: str, audio_path: str) -> tuple[array, ...]:
@@ -114,8 +129,13 @@ def _wave_frames(envelopes: tuple[array, ...]):
                 index = now - round(age * _ENVELOPE_HZ)
                 height = max(0, band[index]) * scale if index >= 0 else 0
                 points.append((x, center - round(height)))
-            draw.line(points, fill=color, width=width)
-            draw.line([(x, 2 * center - y) for x, y in points], fill=color, width=width)
+            mirrored = [(x, 2 * center - y) for x, y in reversed(points)]
+            layer = Image.new("RGBA", frame.size)
+            wave = ImageDraw.Draw(layer)
+            wave.polygon(points + mirrored, fill=(*color[:3], 85))
+            wave.line(points, fill=color, width=width)
+            wave.line(mirrored, fill=color, width=width)
+            frame.alpha_composite(layer)
         yield frame.tobytes()
 
 
@@ -230,9 +250,9 @@ def _render_video(
 
     intro = cover.copy()
     draw = ImageDraw.Draw(intro, "RGBA")
-    draw.rectangle((0, 506, _FRAME_SIZE, _FRAME_SIZE), fill=(18, 18, 22, 235))
-    _draw_line(draw, title or "SoundCloud", 528, 33, "#ffffff")
-    _draw_line(draw, artist, 581, 23, "#ffad86")
+    draw.rectangle((0, 0, _FRAME_SIZE, 111), fill=(18, 18, 22, 235))
+    _draw_line(draw, artist, 71, 23, "#ffad86")
+    title_image, title_x = _title_overlay(title)
 
     log.info("SoundCloud-video [%s]: haetaan FFmpeg ja analysoidaan taajuuskaistat", message_id)
     ffmpeg, _ = run.get_or_fetch_platform_executables_else_raise()
@@ -246,20 +266,23 @@ def _render_video(
     with tempfile.TemporaryDirectory(prefix="soundcloud_video_") as directory:
         cover_path = Path(directory) / "cover.png"
         intro_path = Path(directory) / "intro.png"
+        title_path = Path(directory) / "title.png"
         video_path = Path(directory) / "track.mp4"
         cover.save(cover_path)
         intro.save(intro_path)
+        title_image.save(title_path)
         _encode_video(
             [
                 ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error",
                 "-loop", "1", "-framerate", str(_VIDEO_FPS), "-i", str(cover_path),
-                "-i", str(intro_path), "-i", audio_path,
+                "-i", str(intro_path), "-i", audio_path, "-i", str(title_path),
                 "-f", "rawvideo", "-pixel_format", "rgba",
                 "-video_size", f"{_WAVE_WIDTH}x{_WAVE_HEIGHT}",
                 "-framerate", str(_VIDEO_FPS), "-i", "pipe:0",
                 "-filter_complex_threads", "1", "-filter_complex",
-                f"[0:v][1:v]overlay=enable='lt(t,{_INTRO_SECONDS})'[cover];"
-                "[cover][3:v]overlay=x=24:y=380:eof_action=pass[video]",
+                f"[0:v][1:v]overlay=enable='lt(t,{_INTRO_SECONDS})'[intro];"
+                f"[intro][3:v]overlay=x='{title_x}':y=22:enable='lt(t,{_INTRO_SECONDS})'[cover];"
+                "[cover][4:v]overlay=x=24:y=380:eof_action=pass[video]",
                 "-map", "[video]", "-map", "2:a:0", "-shortest",
                 "-c:v", "libx264", "-preset", "fast", "-crf", "24",
                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "128k",
