@@ -4,6 +4,7 @@
 !.env.example
 /DM/
 /Channels/
+/clipboard_downloads/
 /user_data.json
 /user_versions.json
 
