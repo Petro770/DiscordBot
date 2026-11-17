@@ -104,6 +104,7 @@ class VideoInfo:
     description: str = ""
     source_url: str = ""
     is_video: bool = True
+    artwork_url: str = ""
 
     def format_message(self, max_desc_len: int = 300, max_tags: int = 15) -> str:
         """Muodosta Discord-viestin sisältö metadatalle.
