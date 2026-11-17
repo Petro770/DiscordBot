@@ -31,7 +31,7 @@ _ENVELOPE_HZ = 120
 _WAVE_WIDTH = 592
 _WAVE_HEIGHT = 112
 _NO_CONSOLE = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-# Taajuuskaista, näkyvä historia (s), pystysijainti, väri ja viivan leveys.
+# Taajuuskaista, aikaikkunan leveys (s), pystysijainti, väri ja viivan leveys.
 _WAVE_BANDS = (
     ("lowpass=f=220", 3.4, 36, (255, 153, 82, 200), 2),
     ("highpass=f=220,lowpass=f=2500", 2.4, 56, (221, 148, 255, 220), 2),
@@ -114,6 +114,12 @@ def _read_envelopes(ffmpeg: str, audio_path: str) -> tuple[array, ...]:
 
 def _wave_frames(envelopes: tuple[array, ...]):
     scales = [32 / max(max(band, default=0), 0.02) for band in envelopes]
+    x_positions = range(12, _WAVE_WIDTH - 11, 4)
+    center_x = _WAVE_WIDTH // 2
+    sample_offsets = [
+        [round((x - center_x) * window * _ENVELOPE_HZ / (_WAVE_WIDTH - 24)) for x in x_positions]
+        for _, window, *_ in _WAVE_BANDS
+    ]
     samples_per_frame = _ENVELOPE_HZ // _VIDEO_FPS
     for now in range(0, len(envelopes[0]), samples_per_frame):
         frame = Image.new("RGBA", (_WAVE_WIDTH, _WAVE_HEIGHT))
@@ -121,13 +127,12 @@ def _wave_frames(envelopes: tuple[array, ...]):
         draw.rounded_rectangle(
             (0, 0, _WAVE_WIDTH - 1, _WAVE_HEIGHT - 1), radius=16, fill=(18, 18, 22, 165)
         )
-        for band, scale, style in zip(envelopes, scales, _WAVE_BANDS):
-            _, history, center, color, width = style
+        for band, scale, offsets, style in zip(envelopes, scales, sample_offsets, _WAVE_BANDS):
+            _, _, center, color, width = style
             points = []
-            for x in range(12, _WAVE_WIDTH - 11, 4):
-                age = (_WAVE_WIDTH - 12 - x) / (_WAVE_WIDTH - 24) * history
-                index = now - round(age * _ENVELOPE_HZ)
-                height = max(0, band[index]) * scale if index >= 0 else 0
+            for x, offset in zip(x_positions, offsets):
+                index = now + offset
+                height = max(0, band[index]) * scale if 0 <= index < len(band) else 0
                 points.append((x, center - round(height)))
             mirrored = [(x, 2 * center - y) for x, y in reversed(points)]
             layer = Image.new("RGBA", frame.size)
