@@ -78,11 +78,12 @@ class PendingURL:
     url: str
     names: list[str]
     deadline: float
-    emoji: str = ""
+    emojis: tuple[str, ...]
     timer_task: Optional[asyncio.Task] = None
     delete_original: bool = False
 
 
+SOUNDCLOUD_MP3_EMOJI = "🎵"
 _pending_urls: dict[int, PendingURL] = {}
 
 _print_queue: PrintQueue | None = None
@@ -285,7 +286,7 @@ async def cleanup_pending():
             if channel is None:
                 channel = await _bot.fetch_channel(p.channel_id)
             msg = await channel.fetch_message(mid)
-            await msg.remove_reaction(p.emoji, _bot.user)
+            await _remove_url_reactions(msg, p)
         except Exception:
             pass
         log.info("⏰ Siivottu URL (viesti %d).", mid)
@@ -600,6 +601,8 @@ async def handle_soundcloud(
     url: str,
     delete_original: bool = False,
     forward_channel_id: int | None = None,
+    *,
+    audio_only: bool = False,
 ):
     from core.models import NonRetryableError
     from downloaders.soundcloud import download_soundcloud
@@ -622,7 +625,7 @@ async def handle_soundcloud(
     video_path = None
     try:
         limit = _effective_file_limit(message)
-        if config.ENABLE_SOUNDCLOUD_VIDEO and result.artwork_url:
+        if not audio_only and config.ENABLE_SOUNDCLOUD_VIDEO and result.artwork_url:
             await sender._update_status("🎵 Tehdään kansikuvavideo...")
             video_path = await make_soundcloud_video(
                 result.filepath, result.artwork_url, result.title, result.uploader, limit
@@ -966,12 +969,28 @@ class Send:
 # PENDING URL (reaktio-kysely videotulostukseen)
 # ============================================================
 
-async def _start_pending_url(message: discord.Message,url: str,names: list[str],delete_original: bool = False, ):
-    emoji = "🎬"
-    try:
-        await message.add_reaction(emoji)
-    except Exception as e:
-        log.warning("PendingURL: reaktion lisäys epäonnistui: %s", e)
+async def _remove_url_reactions(message: discord.Message, pending: PendingURL):
+    for emoji in pending.emojis:
+        try:
+            await message.remove_reaction(emoji, _bot.user)
+        except discord.HTTPException:
+            log.debug("URL-reaktion %s poisto epäonnistui", emoji)
+
+
+async def _start_pending_url(
+    message: discord.Message, url: str, names: list[str], delete_original: bool = False,
+):
+    from downloaders.soundcloud import is_soundcloud
+
+    emojis = (config.URL_REACTION_EMOJI,)
+    if config.ENABLE_SOUNDCLOUD_VIDEO and is_soundcloud(url):
+        emojis += (SOUNDCLOUD_MP3_EMOJI,)
+
+    for emoji in emojis:
+        try:
+            await message.add_reaction(emoji)
+        except discord.HTTPException as e:
+            log.warning("PendingURL: reaktion lisäys epäonnistui: %s", e)
 
     pending = PendingURL(
         message_id=message.id,
@@ -979,7 +998,7 @@ async def _start_pending_url(message: discord.Message,url: str,names: list[str],
         url=url,
         names=names,
         deadline=asyncio.get_running_loop().time() + config.PRINT_TIMEOUT,
-        emoji=emoji,
+        emojis=emojis,
         delete_original=delete_original,
     )
     _pending_urls[message.id] = pending
@@ -992,7 +1011,7 @@ async def _pending_url_timeout(pending: PendingURL):
     except asyncio.CancelledError:
         return
 
-    if pending.message_id not in _pending_urls:
+    if _pending_urls.get(pending.message_id) is not pending:
         return
 
     _pending_urls.pop(pending.message_id, None)
@@ -1003,16 +1022,13 @@ async def _pending_url_timeout(pending: PendingURL):
         if channel is None:
             channel = await _bot.fetch_channel(pending.channel_id)
         msg = await channel.fetch_message(pending.message_id)
-        await msg.remove_reaction(pending.emoji, _bot.user)
+        await _remove_url_reactions(msg, pending)
         log.info("⏰ PendingURL timeout (viesti %d).", pending.message_id)
     except Exception:
         pass
 
-async def _trigger_url(pending: PendingURL, message: discord.Message):
+async def _trigger_url(pending: PendingURL, message: discord.Message, *, audio_only: bool):
     """Kun reaktio saatu → käsittele URL."""
-    if pending.timer_task and not pending.timer_task.done():
-        pending.timer_task.cancel()
-    _pending_urls.pop(pending.message_id, None)
 
     # Reititä URL normaaliin käsittelyyn.
     from downloaders.youtube import is_youtube
@@ -1037,7 +1053,7 @@ async def _trigger_url(pending: PendingURL, message: discord.Message):
         elif is_twitch(url):
             await handle_twitch(message, url, delete_original=del_orig)
         elif is_soundcloud(url):
-            await handle_soundcloud(message, url, delete_original=del_orig)
+            await handle_soundcloud(message, url, delete_original=del_orig, audio_only=audio_only)
         else:
             await message.reply("⚠️ Tuntuma URL ei ole tunnistettu.", delete_after=REPLY_DELETE_AFTER)
     except Exception as e:
@@ -1060,8 +1076,12 @@ async def check_url_reaction(reaction: discord.RawReactionActionEvent) -> bool:
         return False
 
     emoji_str = str(reaction.emoji).rstrip('\ufe0f')
-    if emoji_str != config.URL_REACTION_EMOJI:
+    if emoji_str not in pending.emojis:
         return False
+
+    _pending_urls.pop(reaction.message_id)
+    if pending.timer_task:
+        pending.timer_task.cancel()
 
     log.info("🎬 URL-reaktio saatu: viesti=%d, url=%s", reaction.message_id, pending.url[:60])
 
@@ -1072,10 +1092,11 @@ async def check_url_reaction(reaction: discord.RawReactionActionEvent) -> bool:
         message = await channel.fetch_message(reaction.message_id)
     except Exception as e:
         log.error("PendingURL: viestin haku epäonnistui: %s", e)
-        _pending_urls.pop(reaction.message_id, None)
         return True
 
-    await _trigger_url(pending, message)
+    if SOUNDCLOUD_MP3_EMOJI in pending.emojis:
+        await _remove_url_reactions(message, pending)
+    await _trigger_url(pending, message, audio_only=emoji_str == SOUNDCLOUD_MP3_EMOJI)
     return True
 
 def _make_threadsafe_progress(s: "Send") -> Callable[[str], None]:
