@@ -45,7 +45,7 @@ Lähetä botille tuettu medialinkki tai kuva yksityisviestinä tai määritetyll
 
 ## Leikepöydän medialataukset
 
-SoundCloud-kappaleet ladataan oletuksena MP4-videoiksi kansikuvalla. Jos kansikuva puuttuu, videossa näkyy musta tausta. Poista GUI:n **SoundCloud leikepöydälle MP4-videona** -valinta, kun haluat MP3-tiedoston. Valinta muistetaan seuraavalla käynnistyksellä.
+SoundCloud-kappaleet ladataan oletuksena MP4-videoiksi animoidulla aaltomuodolla. Videon muodostus käyttää samaa toteutusta kuin Discord-botti. Poista GUI:n **SoundCloud leikepöydälle MP4-videona** -valinta, kun haluat MP3-tiedoston. Valinta muistetaan seuraavalla käynnistyksellä.
 
 Valitse GUI:ssa **Seuraa leikepöydän medialinkkejä** ja kopioi yksittäinen YouTube-, Instagram-, X-, TikTok-, Twitch- tai SoundCloud-medialinkki. Lataus toimii taustalla yksi linkki kerrallaan. Yli 150 MB:n videot yritetään pakata, ja valmis tiedosto saa olla enintään 150 MB.
 

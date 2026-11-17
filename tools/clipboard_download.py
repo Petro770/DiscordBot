@@ -47,18 +47,25 @@ async def download_media(url: str, destination: Path, soundcloud_video: bool = T
     loader = next((download for matches, download in routes if matches(url)), None)
     if loader is None:
         raise ValueError("Linkistä ei tunnistettu tuettua mediaa.")
-    if is_soundcloud(url):
-        media = await download_soundcloud(url, as_video=soundcloud_video)
-    else:
-        media = await loader(url)
+    media = await loader(url)
     if media is None:
         raise ValueError("Mediaa ei saatu ladattua.")
 
     original = Path(media.filepath)
+    rendered = None
     try:
+        if is_soundcloud(url) and soundcloud_video:
+            from tools.soundcloud_video import make_soundcloud_video
+
+            video_path = await make_soundcloud_video(
+                str(original), media.artwork_url, media.title, media.uploader, MAX_FILE_BYTES,
+            )
+            if video_path is None:
+                raise ValueError("SoundCloud-aaltomuotovideon luonti epäonnistui.")
+            rendered = Path(video_path)
         with TemporaryDirectory(prefix="clipboard-") as folder:
-            source = original
-            if original.stat().st_size > MAX_FILE_BYTES and media.is_video:
+            source = rendered or original
+            if source.stat().st_size > MAX_FILE_BYTES and media.is_video:
                 from tools.vid_compress import compress_to_720p
 
                 source = Path(folder) / "compressed.mp4"
@@ -74,6 +81,8 @@ async def download_media(url: str, destination: Path, soundcloud_video: bool = T
             return output
     finally:
         original.unlink(missing_ok=True)
+        if rendered is not None:
+            rendered.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":
