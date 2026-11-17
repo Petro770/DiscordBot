@@ -4,11 +4,16 @@ import re
 import asyncio
 import tempfile
 import shutil
+from pathlib import Path
+from urllib.parse import urlsplit
 
 import instaloader
+import yt_dlp
+from yt_dlp.utils import DownloadError
 
 from core.logging import log
 from core.models import VideoInfo, NonRetryableError
+from downloaders.base import finalize
 
 
 DISCORD_FILE_LIMIT = 25 * 1024 * 1024  # 25 MB
@@ -175,6 +180,38 @@ def _download_sync(shortcode: str, url: str) -> VideoInfo | None:
         return None
 
 
+def _download_reel(shortcode: str, url: str) -> VideoInfo | None:
+    with tempfile.TemporaryDirectory(prefix="ig_reel_") as folder:
+        output = Path(folder) / f"instagram_{shortcode}.mp4"
+        options = {
+            "format": "best[ext=mp4]",
+            "outtmpl": str(output).replace("%", "%%"),
+            "quiet": True,
+            "noprogress": True,
+            "noplaylist": True,
+            "socket_timeout": 20,
+            "extractor_retries": 0,
+        }
+        try:
+            with yt_dlp.YoutubeDL(options) as downloader:
+                info = downloader.extract_info(
+                    f"https://www.instagram.com/reel/{shortcode}/", download=True,
+                )
+        except DownloadError as error:
+            log.warning("Instagram Reel: yt-dlp epäonnistui: %s", error)
+            return None
+        if not info or not output.is_file() or not output.stat().st_size:
+            return None
+        return VideoInfo(
+            filepath=finalize(str(output), "ig"),
+            filename=output.name,
+            title=info.get("title") or "",
+            uploader=info.get("uploader") or "",
+            description=info.get("description") or "",
+            source_url=url,
+        )
+
+
 async def download_instagram(url: str) -> VideoInfo | None:
     """Lataa Instagram-videon tai kuvan asynkisesti."""
     shortcode = extract_shortcode(url)
@@ -185,7 +222,11 @@ async def download_instagram(url: str) -> VideoInfo | None:
     log.info("📱 Instagram-lataus aloitettu: shortcode=%s", shortcode)
     
     try:
-        result = await asyncio.to_thread(_download_sync, shortcode, url)
+        result = None
+        if re.search(r"/reels?/", urlsplit(url).path):
+            result = await asyncio.to_thread(_download_reel, shortcode, url)
+        if result is None:
+            result = await asyncio.to_thread(_download_sync, shortcode, url)
         if result:
             log.info("✅ Instagram: %s", result.filename)
         return result

@@ -4,12 +4,18 @@ import sys
 import threading
 import time
 import traceback
+from pathlib import Path
+from uuid import uuid4
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
-    QPushButton, QSystemTrayIcon, QTextEdit, QMenu
+    QCheckBox, QPushButton, QSystemTrayIcon, QTextEdit, QMenu
 )
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QThread
+from PyQt5.QtCore import QMimeData, QObject, QProcess, QProcessEnvironment, QSettings, QThread, QUrl, pyqtSignal, pyqtSlot
+
+from tools.clipboard_download import MAX_FILE_BYTES, clipboard_url
+
+PROJECT_DIR = Path(__file__).resolve().parent
 
 import discord
 import config
@@ -149,6 +155,18 @@ class BotManagerApp(QMainWindow):
 
         self.tray_icon = self._init_tray_icon()
         self.tray_icon.activated.connect(self._on_tray_icon_activated)
+        self.clipboard = QApplication.clipboard()
+        self.clipboard.dataChanged.connect(self._clipboard_changed)
+        self.download_process = QProcess(self)
+        self.download_process.setWorkingDirectory(str(PROJECT_DIR))
+        environment = QProcessEnvironment.systemEnvironment()
+        environment.insert("PYTHONIOENCODING", "utf-8")
+        self.download_process.setProcessEnvironment(environment)
+        self.download_process.setStandardOutputFile(QProcess.nullDevice())
+        self.download_process.finished.connect(self._download_finished)
+        self.download_process.errorOccurred.connect(self._download_error)
+        self._download_dir = None
+        self._last_url = None
 
     def _init_tray_icon(self) -> QSystemTrayIcon:
         icon_path = os.path.join(
@@ -185,6 +203,80 @@ class BotManagerApp(QMainWindow):
         self.stop_button.setEnabled(False)
         self.stop_button.clicked.connect(self.stop_bot_service)
         layout.addWidget(self.stop_button)
+
+        self.clipboard_checkbox = QCheckBox("Seuraa leikepöydän medialinkkejä (150 MB)")
+        self.clipboard_checkbox.toggled.connect(self._clipboard_toggled)
+        layout.addWidget(self.clipboard_checkbox)
+        self.soundcloud_video_checkbox = QCheckBox("SoundCloud leikepöydälle MP4-videona")
+        self.settings = QSettings("BogosBinted", "DiscordBot")
+        self.soundcloud_video_checkbox.setChecked(
+            self.settings.value("clipboard/soundcloudVideo", True, type=bool)
+        )
+        self.soundcloud_video_checkbox.toggled.connect(
+            lambda enabled: self.settings.setValue("clipboard/soundcloudVideo", enabled)
+        )
+        layout.addWidget(self.soundcloud_video_checkbox)
+        self.download_status = QLabel()
+        self.download_status.setWordWrap(True)
+        layout.addWidget(self.download_status)
+
+    def _clipboard_toggled(self, enabled):
+        self._last_url = None
+        if enabled:
+            self._clipboard_changed()
+
+    def _clipboard_changed(self):
+        if not self.clipboard_checkbox.isChecked():
+            return
+        url = clipboard_url(self.clipboard.text())
+        if url == self._last_url:
+            return
+        if url is None:
+            self._last_url = None
+            return
+        if self.download_process.state() != QProcess.NotRunning:
+            self.download_status.setText("Lataus on käynnissä. Kopioi uusi linkki sen jälkeen.")
+            return
+        self._last_url = url
+        self._download_dir = PROJECT_DIR / "clipboard_downloads" / uuid4().hex
+        self.download_status.setText("Ladataan mediaa…")
+        python = Path(sys.executable)
+        if python.name.lower() == "pythonw.exe" and python.with_name("python.exe").is_file():
+            python = python.with_name("python.exe")
+        arguments = ["-m", "tools.clipboard_download", url, str(self._download_dir)]
+        if not self.soundcloud_video_checkbox.isChecked():
+            arguments.append("--soundcloud-mp3")
+        self.download_process.start(str(python), arguments)
+
+    def _download_finished(self, exit_code, exit_status):
+        errors = bytes(self.download_process.readAllStandardError()).decode("utf-8", errors="replace")
+        if exit_code == 0 and exit_status == QProcess.NormalExit:
+            files = list(self._download_dir.glob("media.*"))
+            if len(files) == 1 and files[0].is_file() and 0 < files[0].stat().st_size <= MAX_FILE_BYTES:
+                if not self.clipboard_checkbox.isChecked():
+                    self.download_status.setText(f"Lataus tallennettu kansioon {self._download_dir.name}.")
+                    return
+                data = QMimeData()
+                data.setUrls([QUrl.fromLocalFile(str(files[0]))])
+                self.clipboard.setMimeData(data)
+                message = "Tiedosto on leikepöydällä. Liitä Discordiin painamalla Ctrl+V."
+                self.download_status.setText(message)
+                self.tray_icon.showMessage("Lataus valmis", message)
+                return
+        self._last_url = None
+        message = next(
+            (line.removeprefix("LATAUSVIRHE=") for line in reversed(errors.splitlines())
+             if line.startswith("LATAUSVIRHE=")),
+            "Medialataus epäonnistui.",
+        )
+        self.download_status.setText(message)
+        self._append_log(message)
+        self.tray_icon.showMessage("Lataus epäonnistui", message)
+
+    def _download_error(self, error):
+        if error == QProcess.FailedToStart:
+            self._last_url = None
+            self.download_status.setText("Latausprosessia ei voitu käynnistää.")
 
     def _append_log(self, message: str):
         """Ainoa paikka, missä QTextEditiin kirjoitetaan."""
@@ -281,6 +373,11 @@ class BotManagerApp(QMainWindow):
         )
 
     def quit_application(self):
+        if self.download_process.state() != QProcess.NotRunning:
+            self.clipboard_checkbox.setChecked(False)
+            self.download_process.finished.disconnect(self._download_finished)
+            self.download_process.kill()
+            self.download_process.waitForFinished(2000)
         self._append_log("Sovellus lopetetaan.")
         self.stop_bot_service()
         self.tray_icon.hide()

@@ -4,8 +4,10 @@
 !.env.example
 /DM/
 /Channels/
+/clipboard_downloads/
 /user_data.json
 /user_versions.json
+/clipboard_downloads/
 
 # Lokit ja FFmpegin väliaikaistiedostot
 *.log
