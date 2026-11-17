@@ -603,6 +603,7 @@ async def handle_soundcloud(
 ):
     from core.models import NonRetryableError
     from downloaders.soundcloud import download_soundcloud
+    from tools.soundcloud_video import make_soundcloud_video
 
     await _changelog_notify(message)
     sender = Send(message, delete_original, forward_channel_id=forward_channel_id)
@@ -618,9 +619,18 @@ async def handle_soundcloud(
         await sender.send("⚠️ SoundCloud-kappaleen lataus epäonnistui.", delete_after=REPLY_DELETE_AFTER)
         return
 
+    video_path = None
     try:
-        size = os.path.getsize(result.filepath)
         limit = _effective_file_limit(message)
+        if config.ENABLE_SOUNDCLOUD_VIDEO and result.artwork_url:
+            await sender._update_status("🎵 Tehdään kansikuvavideo...")
+            video_path = await make_soundcloud_video(
+                result.filepath, result.artwork_url, result.title, result.uploader, limit
+            )
+
+        filepath = video_path or result.filepath
+        filename = os.path.splitext(result.filename)[0] + ".mp4" if video_path else result.filename
+        size = os.path.getsize(filepath)
         if size > limit:
             await sender.send(
                 f"⚠️ Äänitiedosto ylittää Discordin kokorajan "
@@ -630,7 +640,7 @@ async def handle_soundcloud(
             return
 
         content = f"🎵 {result.format_message()}" if should_include_content(message.author.id) else ""
-        file = discord.File(result.filepath, filename=result.filename)
+        file = discord.File(filepath, filename=filename)
         try:
             sent = await sender.send(content, file=file)
         finally:
@@ -641,6 +651,8 @@ async def handle_soundcloud(
         log.exception("SoundCloud-tiedoston lähettäminen epäonnistui")
         await sender.send("⚠️ Äänitiedoston lähettäminen epäonnistui.", delete_after=REPLY_DELETE_AFTER)
     finally:
+        if video_path:
+            os.unlink(video_path)
         os.unlink(result.filepath)
 
 

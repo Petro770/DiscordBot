@@ -81,6 +81,7 @@ def _download_sync(url: str) -> VideoInfo | None:
             uploader=info.get("uploader") or "",
             source_url=url,
             is_video=False,
+            artwork_url=info.get("thumbnail") or "",
         )
 
 
