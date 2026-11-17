@@ -175,6 +175,49 @@ def _fallback_cover() -> Image.Image:
     return cover
 
 
+def _compress_for_upload(
+    ffmpeg: str, source: Path, target: Path, duration: float, file_limit: int,
+    message_id: int | None,
+) -> bool:
+    # Jätä tilaa MP4-säiliölle ja enkooderin bittivirtavaihtelulle.
+    total_bitrate = int(file_limit * 8 * 0.90 / duration)
+    audio_bitrate = min(128_000, max(48_000, total_bitrate // 2))
+    video_bitrate = total_bitrate - audio_bitrate
+    if video_bitrate < 20_000:
+        log.warning("SoundCloud-video [%s]: kokoraja on liian pieni koko kappaleelle", message_id)
+        return False
+
+    width = 320 if video_bitrate < 90_000 else 480
+    log.info(
+        "SoundCloud-video [%s]: pakataan MP4 (%dx%d, video %d b/s, ääni %d b/s)",
+        message_id, width, width, video_bitrate, audio_bitrate,
+    )
+    command = [
+        ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error", "-y", "-i", str(source),
+        "-map", "0:v:0", "-vf", f"scale={width}:-2",
+        "-c:v", "libx264", "-preset", "fast", "-b:v", str(video_bitrate),
+        "-passlogfile", str(target.with_suffix(".pass")),
+    ]
+    started = monotonic()
+    subprocess.run(
+        command + ["-pass", "1", "-an", "-f", "null", os.devnull],
+        check=True, capture_output=True, timeout=300, creationflags=_NO_CONSOLE,
+    )
+    subprocess.run(
+        command + [
+            "-pass", "2", "-map", "0:a:0", "-c:a", "aac", "-b:a", str(audio_bitrate),
+            "-movflags", "+faststart", str(target),
+        ],
+        check=True, capture_output=True, timeout=300, creationflags=_NO_CONSOLE,
+    )
+    size = target.stat().st_size
+    log.info(
+        "SoundCloud-video [%s]: pakkaus valmis %.1f sekunnissa (%d tavua, raja %d)",
+        message_id, monotonic() - started, size, file_limit,
+    )
+    return 0 < size <= file_limit
+
+
 def _render_video(
     audio_path: str, artwork: Image.Image | None, title: str, artist: str, file_limit: int,
     message_id: int | None,
@@ -195,9 +238,10 @@ def _render_video(
     ffmpeg, _ = run.get_or_fetch_platform_executables_else_raise()
     started = monotonic()
     envelopes = _read_envelopes(ffmpeg, audio_path)
+    duration = len(envelopes[0]) / _ENVELOPE_HZ
     log.info(
         "SoundCloud-video [%s]: analyysi valmis %.1f sekunnissa, äänen kesto %.1f s",
-        message_id, monotonic() - started, len(envelopes[0]) / _ENVELOPE_HZ,
+        message_id, monotonic() - started, duration,
     )
     with tempfile.TemporaryDirectory(prefix="soundcloud_video_") as directory:
         cover_path = Path(directory) / "cover.png"
@@ -229,7 +273,13 @@ def _render_video(
                 "SoundCloud-video [%s]: MP4 ylittää tiedostorajan (%d > %d tavua)",
                 message_id, video_size, file_limit,
             )
-            return None
+            compressed_path = video_path.with_name("track-compressed.mp4")
+            if not _compress_for_upload(
+                ffmpeg, video_path, compressed_path, duration, file_limit, message_id,
+            ):
+                return None
+            video_path = compressed_path
+            video_size = video_path.stat().st_size
         log.info("SoundCloud-video [%s]: MP4 valmis (%d tavua, raja %d)", message_id, video_size, file_limit)
         return finalize(str(video_path), "soundcloud")
 
