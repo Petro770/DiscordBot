@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QCheckBox, QPushButton, QSystemTrayIcon, QTextEdit, QMenu
 )
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import QMimeData, QObject, QProcess, QProcessEnvironment, QThread, QUrl, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QMimeData, QObject, QProcess, QProcessEnvironment, QSettings, QThread, QUrl, pyqtSignal, pyqtSlot
 
 from tools.clipboard_download import MAX_FILE_BYTES, clipboard_url
 
@@ -207,6 +207,15 @@ class BotManagerApp(QMainWindow):
         self.clipboard_checkbox = QCheckBox("Seuraa leikepöydän medialinkkejä (150 MB)")
         self.clipboard_checkbox.toggled.connect(self._clipboard_toggled)
         layout.addWidget(self.clipboard_checkbox)
+        self.soundcloud_video_checkbox = QCheckBox("SoundCloud leikepöydälle MP4-videona")
+        self.settings = QSettings("BogosBinted", "DiscordBot")
+        self.soundcloud_video_checkbox.setChecked(
+            self.settings.value("clipboard/soundcloudVideo", True, type=bool)
+        )
+        self.soundcloud_video_checkbox.toggled.connect(
+            lambda enabled: self.settings.setValue("clipboard/soundcloudVideo", enabled)
+        )
+        layout.addWidget(self.soundcloud_video_checkbox)
         self.download_status = QLabel()
         self.download_status.setWordWrap(True)
         layout.addWidget(self.download_status)
@@ -234,9 +243,10 @@ class BotManagerApp(QMainWindow):
         python = Path(sys.executable)
         if python.name.lower() == "pythonw.exe" and python.with_name("python.exe").is_file():
             python = python.with_name("python.exe")
-        self.download_process.start(
-            str(python), ["-m", "tools.clipboard_download", url, str(self._download_dir)]
-        )
+        arguments = ["-m", "tools.clipboard_download", url, str(self._download_dir)]
+        if not self.soundcloud_video_checkbox.isChecked():
+            arguments.append("--soundcloud-mp3")
+        self.download_process.start(str(python), arguments)
 
     def _download_finished(self, exit_code, exit_status):
         errors = bytes(self.download_process.readAllStandardError()).decode("utf-8", errors="replace")

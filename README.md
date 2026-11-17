@@ -9,8 +9,7 @@ Tarvitset Python 3.10:n tai uudemman sekä Discord-sovelluksen, jolle on luotu b
 1. Luo projektikansiossa virtuaaliympäristö ja asenna riippuvuudet. Komennot ovat Windowsin PowerShellille.
 
    ```powershell
-   python -m venv .venv
-   .\.venv\Scripts\python.exe -m pip install -r requirements.txt
+   .\install.ps1
    ```
 
 2. Ota Discord Developer Portalissa botin **Message Content Intent** käyttöön. Jos käytät bottia palvelimella, kutsu se palvelimelle ja anna sille kohdekanavalla oikeudet nähdä kanava, lukea viestihistoriaa, lähettää viestejä ja liitteitä sekä lisätä reaktioita. `POISTA` tarvitsee palvelinkanavalla myös **Manage Messages** -oikeuden.
@@ -22,13 +21,16 @@ Tarvitset Python 3.10:n tai uudemman sekä Discord-sovelluksen, jolle on luotu b
    TARGET_CHANNEL_ID=123456789012345678
    ```
 
-4. Käynnistä botti komentoriviltä.
+4. Käynnistä graafinen hallintaikkuna tai komentorivibotti.
 
    ```powershell
-   .\.venv\Scripts\python.exe main.py
+   .\launch.ps1
+   .\launch.ps1 -Mode Main
    ```
 
-   Graafisen käynnistimen saat auki komennolla `.\.venv\Scripts\python.exe gui_launcher.py`.
+   `.\launch.ps1 -CheckOnly` tarkistaa molempien käynnistystapojen Python-riippuvuudet ja moduulien latautumisen ilman Discord-yhteyttä. Skriptit käyttävät projektin omaa `.venv`-ympäristöä tavallisilla käyttäjäoikeuksilla.
+
+   Jos PowerShell estää skriptin suorituskäytännön vuoksi, voit käynnistää sen erillisessä PowerShell-prosessissa komennolla `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`. Vaihda tiedoston nimeksi `.\launch.ps1` käynnistystä varten.
 
 ## Käyttö Discordissa
 
@@ -42,6 +44,8 @@ Lähetä botille tuettu medialinkki tai kuva yksityisviestinä tai määritetyll
 | `UNOHDAMINUT` | Käynnistää yksityisviestissä käyttäjäasetusten ja botin lähettämien yksityisviestien poiston. |
 
 ## Leikepöydän medialataukset
+
+SoundCloud-kappaleet ladataan oletuksena MP4-videoiksi kansikuvalla. Jos kansikuva puuttuu, videossa näkyy musta tausta. Poista GUI:n **SoundCloud leikepöydälle MP4-videona** -valinta, kun haluat MP3-tiedoston. Valinta muistetaan seuraavalla käynnistyksellä.
 
 Valitse GUI:ssa **Seuraa leikepöydän medialinkkejä** ja kopioi yksittäinen YouTube-, Instagram-, X-, TikTok-, Twitch- tai SoundCloud-medialinkki. Lataus toimii taustalla yksi linkki kerrallaan. Yli 150 MB:n videot yritetään pakata, ja valmis tiedosto saa olla enintään 150 MB.
 

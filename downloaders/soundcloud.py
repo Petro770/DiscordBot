@@ -2,6 +2,7 @@
 import asyncio
 import re
 import tempfile
+import subprocess
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -50,7 +51,19 @@ async def _resolve_track(url: str) -> str:
     raise NonRetryableError("⚠️ SoundCloud-jakolinkistä ei löytynyt yksittäistä kappaletta.")
 
 
-def _download_sync(url: str) -> VideoInfo | None:
+def _make_video(audio: Path, image: Path | None, output: Path, ffmpeg: str) -> None:
+    picture = ["-loop", "1", "-i", str(image)] if image else [
+        "-f", "lavfi", "-i", "color=c=black:s=720x720:r=1",
+    ]
+    subprocess.run([
+        ffmpeg, "-y", *picture, "-i", str(audio),
+        "-vf", "scale=720:720:force_original_aspect_ratio=decrease,pad=720:720:(ow-iw)/2:(oh-ih)/2",
+        "-c:v", "libx264", "-tune", "stillimage", "-r", "1", "-pix_fmt", "yuv420p",
+        "-c:a", "aac", "-b:a", "128k", "-shortest", "-movflags", "+faststart", str(output),
+    ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+
+def _download_sync(url: str, as_video: bool = False) -> VideoInfo | None:
     with tempfile.TemporaryDirectory(prefix="soundcloud_") as directory:
         audio_path = Path(directory) / "track.mp3"
         ffmpeg_path, _ = run.get_or_fetch_platform_executables_else_raise()
@@ -62,6 +75,7 @@ def _download_sync(url: str) -> VideoInfo | None:
             "noplaylist": True,
             "quiet": True,
             "socket_timeout": 20,
+            "writethumbnail": as_video,
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
@@ -74,20 +88,39 @@ def _download_sync(url: str) -> VideoInfo | None:
                 return None
             filename = ydl.prepare_filename(info, outtmpl="%(title).150B.mp3")
 
+        output_path = audio_path
+        if as_video:
+            from PIL import Image
+
+            image_path = None
+            for candidate in Path(directory).glob("track.*"):
+                if candidate == audio_path:
+                    continue
+                try:
+                    with Image.open(candidate) as image:
+                        image_path = Path(directory) / "cover.png"
+                        image.convert("RGB").save(image_path)
+                    break
+                except (OSError, ValueError):
+                    continue
+            output_path = Path(directory) / "track.mp4"
+            _make_video(audio_path, image_path, output_path, ffmpeg_path)
+            filename = str(Path(filename).with_suffix(".mp4"))
+
         return VideoInfo(
-            filepath=finalize(str(audio_path), "soundcloud"),
+            filepath=finalize(str(output_path), "soundcloud"),
             filename=filename,
             title=info.get("title") or "",
             uploader=info.get("uploader") or "",
             source_url=url,
-            is_video=False,
+            is_video=as_video,
         )
 
 
-async def download_soundcloud(url: str) -> VideoInfo | None:
+async def download_soundcloud(url: str, *, as_video: bool = False) -> VideoInfo | None:
     try:
         track_url = await _resolve_track(url)
-        return await asyncio.to_thread(_download_sync, track_url)
+        return await asyncio.to_thread(_download_sync, track_url, as_video)
     except (aiohttp.ClientError, TimeoutError, yt_dlp.utils.DownloadError, OSError):
         log.exception("SoundCloud-lataus epäonnistui")
         return None

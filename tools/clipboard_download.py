@@ -29,7 +29,7 @@ def clipboard_url(text: str) -> str | None:
     return None
 
 
-async def download_media(url: str, destination: Path) -> Path:
+async def download_media(url: str, destination: Path, soundcloud_video: bool = True) -> Path:
     if clipboard_url(url) != url:
         raise ValueError("Kopioi tuettu medialinkki.")
 
@@ -47,7 +47,10 @@ async def download_media(url: str, destination: Path) -> Path:
     loader = next((download for matches, download in routes if matches(url)), None)
     if loader is None:
         raise ValueError("Linkistä ei tunnistettu tuettua mediaa.")
-    media = await loader(url)
+    if is_soundcloud(url):
+        media = await download_soundcloud(url, as_video=soundcloud_video)
+    else:
+        media = await loader(url)
     if media is None:
         raise ValueError("Mediaa ei saatu ladattua.")
 
@@ -75,7 +78,9 @@ async def download_media(url: str, destination: Path) -> Path:
 
 if __name__ == "__main__":
     try:
-        asyncio.run(download_media(sys.argv[1], Path(sys.argv[2])))
+        asyncio.run(download_media(
+            sys.argv[1], Path(sys.argv[2]), soundcloud_video="--soundcloud-mp3" not in sys.argv[3:],
+        ))
     except Exception as error:
         print(f"LATAUSVIRHE={getattr(error, 'user_facing', '') or str(error)}", file=sys.stderr)
         sys.exit(1)
