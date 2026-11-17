@@ -93,6 +93,7 @@ def _render_video(
                 "-movflags", "+faststart", str(video_path),
             ],
             check=True, capture_output=True, timeout=300,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
         if os.path.getsize(video_path) > file_limit:
             return None
