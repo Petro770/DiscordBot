@@ -34,9 +34,9 @@ def read_beat_grid(ffmpeg: str, audio_path: str) -> BeatGrid | None:
     return estimate_beat_grid(envelope)
 
 
-def estimate_beat_grid(envelope: array) -> BeatGrid | None:
+def estimate_beat_grid(envelope: array, *, relaxed: bool = False) -> BeatGrid | None:
     rate = _SAMPLE_RATE
-    if len(envelope) < 4 * rate:
+    if len(envelope) < (3 if relaxed else 4) * rate:
         return None
 
     # Emphasize attacks over sustained bass, with a noise floor for quiet sections.
@@ -56,6 +56,11 @@ def estimate_beat_grid(envelope: array) -> BeatGrid | None:
         (before + 2 * current + after) / 4
         for before, current, after in zip(onsets, onsets[1:], onsets[2:])
     ), 0.0]
+    if relaxed:
+        # Smooth over timing jitter in real performances and compressed audio.
+        signal = [0.0] * 3 + [
+            sum(signal[i - 3:i + 4]) / 7 for i in range(3, len(signal) - 3)
+        ] + [0.0] * 3
     energy = [0.0]
     for value in signal:
         energy.append(energy[-1] + value * value)
@@ -73,7 +78,7 @@ def estimate_beat_grid(envelope: array) -> BeatGrid | None:
     if not peaks:
         return None
     best = max(scores[lag] for lag in peaks)
-    if best < 0.28:
+    if best < (0.22 if relaxed else 0.28):
         return None
     # Prefer the shorter interval when a multiple scores almost equally well.
     lag = next(lag for lag in peaks if scores[lag] >= 0.9 * best)
@@ -85,16 +90,17 @@ def estimate_beat_grid(envelope: array) -> BeatGrid | None:
     for index, onset in enumerate(onsets):
         phase_bin = round(index / period * len(bins)) % len(bins)
         bins[phase_bin] += onset
+    phase_window = range(-4, 5) if relaxed else range(-2, 3)
     phase_bin = max(
         range(len(bins)),
-        key=lambda i: sum(bins[(i + delta) % len(bins)] for delta in range(-2, 3)),
+        key=lambda i: sum(bins[(i + delta) % len(bins)] for delta in phase_window),
     )
-    phase_weight = sum(bins[(phase_bin + delta) % len(bins)] for delta in range(-2, 3))
+    phase_weight = sum(bins[(phase_bin + delta) % len(bins)] for delta in phase_window)
     if phase_weight < 0.2 * sum(bins):
         return None
     # Use the weighted center of the winning phase window to break plateaus.
     offset = sum(delta * bins[(phase_bin + delta) % len(bins)]
-                 for delta in range(-2, 3)) / phase_weight
+                 for delta in phase_window) / phase_weight
     phase = ((phase_bin + offset) / len(bins) * period) % period
     beats = tuple(
         (phase + index * period) / rate

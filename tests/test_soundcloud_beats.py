@@ -47,7 +47,8 @@ class SoundCloudBeatTests(unittest.TestCase):
         peaks = []
         for now in (0.5, 1.0, 1.5):
             floor = Image.new("RGBA", (640, _BEAT_FLOOR_HEIGHT))
-            _draw_beat_sweep(floor, (1.0,), now, (220, 150, 110))
+            _draw_beat_sweep(floor, (1.0,), now, (220, 150, 110),
+                             SoundCloudVideoSettings(beat_floor_accent_every_four=False))
             alpha = floor.getchannel("A")
             positions.append([alpha.crop((0, y, 640, y + 1)).getbbox()[0] for y in (40, 120)])
             peaks.append(alpha.getextrema()[1])
@@ -93,6 +94,7 @@ class SoundCloudBeatTests(unittest.TestCase):
         for width, height in ((300, 101), (560, 155)):
             settings = SoundCloudVideoSettings(
                 beat_floor_far_width_percent=width, beat_floor_height=height,
+                beat_floor_accent_every_four=False,
             )
             floor = Image.new("RGBA", (640, _BEAT_FLOOR_HEIGHT))
             _draw_beat_sweep(floor, (1.0,), 0.5, (220, 150, 110), settings)
@@ -110,3 +112,14 @@ class SoundCloudBeatTests(unittest.TestCase):
         )
         self.assertEqual(settings.beat_floor_height, 131)
         self.assertEqual(settings.beat_floor_far_width_percent, 300)
+
+    def test_every_fourth_beat_is_thicker_even_after_seeking(self):
+        beats = tuple(0.5 * index for index in range(12))
+        for index in (0, 1, 4, 8, 9):
+            widths = []
+            for accent in (False, True):
+                floor = Image.new("RGBA", (640, _BEAT_FLOOR_HEIGHT))
+                settings = SoundCloudVideoSettings(beat_floor_accent_every_four=accent)
+                _draw_beat_sweep(floor, beats, beats[index], (220, 150, 110), settings)
+                widths.append(sum(floor.getpixel((x, 85))[3] > 0 for x in range(308, 332)))
+            self.assertEqual(widths[1] - widths[0], 3 if index % 4 == 0 else 0)

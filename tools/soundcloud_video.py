@@ -25,7 +25,7 @@ from static_ffmpeg import run
 
 from core.logging import log
 from tools.download_progress import progress_enabled, report
-from tools.soundcloud_beats import read_beat_grid
+from tools.soundcloud_beats import estimate_beat_grid, read_beat_grid
 from tools.soundcloud_video_settings import SoundCloudVideoSettings
 from downloaders.base import finalize
 
@@ -327,20 +327,21 @@ def _draw_beat_sweep(
     horizon_width = 51.36 * settings.beat_floor_far_width_percent / 100
     foreground_width = 305.4 * settings.beat_floor_near_width_percent / 100
     highlight = tuple(round((channel + 255) / 2) for channel in color)
-    for beat in beat_times[first:last]:
-        age = now - beat
+    for index in range(first, last):
+        age = now - beat_times[index]
+        accented = settings.beat_floor_accent_every_four and index % 4 == 0
         # Translate in floor space. The wider foreground moves more pixels per
         # frame than the horizon, and the line crosses center exactly on the beat.
         position = -age / half_travel
         pulse = max(0, 1 - abs(age) / 0.12)
         fade = min(1, 4 * (1 - abs(position)))
-        alpha = round(fade * (118 + 137 * pulse))
+        alpha = round(fade * min(255, 118 + 137 * pulse + 32 * accented))
         if alpha:
             draw.line(
                 (center + position * horizon_width, horizon_y,
                  center + position * foreground_width, foreground_y),
-                fill=(*(highlight if pulse else color), alpha),
-                width=2 + round(2 * pulse),
+                fill=(*(highlight if pulse or accented else color), alpha),
+                width=2 + round(2 * pulse) + 3 * accented,
             )
 
 
@@ -526,10 +527,20 @@ def _render_video(
     except (OSError, ValueError, subprocess.SubprocessError):
         log.warning("SoundCloud-video [%s]: tempoanalyysi epäonnistui", message_id, exc_info=True)
         beat_grid = None
+    if beat_grid is None:
+        # The existing visualization bands can recover percussion that a
+        # bass-only pass misses. Try the stronger bands first.
+        for envelope in sorted(envelopes, key=lambda band: max(band, default=0), reverse=True)[:3]:
+            beat_grid = estimate_beat_grid(envelope, relaxed=True)
+            if beat_grid is not None:
+                break
     if beat_grid:
         log.info("SoundCloud-video [%s]: tempo %.1f BPM (%.2f BPS)",
                  message_id, beat_grid.bpm, beat_grid.bpm / 60)
         report("analysis", f"Tempo {beat_grid.bpm:.1f} BPM ({beat_grid.bpm / 60:.2f} BPS)")
+    elif settings.beat_floor_enabled:
+        log.warning("SoundCloud-video [%s]: sykkeelle ei löytynyt luotettavaa tempoa", message_id)
+        report("analysis", "Tempoa ei tunnistettu. Video muodostetaan ilman iskulinjoja.")
     log.info(
         "SoundCloud-video [%s]: analyysi valmis %.1f sekunnissa, äänen kesto %.1f s",
         message_id, monotonic() - started, duration,

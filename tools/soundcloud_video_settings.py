@@ -23,6 +23,7 @@ class SoundCloudVideoSettings:
     encode_timeout: int = 300
     auto_compress: bool = True
     beat_floor_enabled: bool = True
+    beat_floor_accent_every_four: bool = True
     beat_floor_x_offset: int = 0
     beat_floor_y_offset: int = -78
     beat_floor_height: int = 101
@@ -51,6 +52,8 @@ class SoundCloudVideoSettings:
             raise ValueError("Virheellinen aaltomuodon tausta-asetus.")
         if type(self.beat_floor_enabled) is not bool:
             raise ValueError("Virheellinen iskulinjojen näkyvyysasetus.")
+        if type(self.beat_floor_accent_every_four) is not bool:
+            raise ValueError("Virheellinen neljän iskun korostusasetus.")
         if type(self.auto_compress) is not bool:
             raise ValueError("Virheellinen automaattipakkausasetus.")
 
