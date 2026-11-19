@@ -66,33 +66,43 @@ async def download_media(url: str, destination: Path, soundcloud_video: bool = T
     original = Path(media.filepath)
     rendered = None
     try:
-        if is_soundcloud(url) and soundcloud_video:
-            from tools.soundcloud_video import make_soundcloud_video
+        destination.mkdir(parents=True, exist_ok=True)
+        with TemporaryDirectory(prefix=".clipboard-", dir=destination) as folder:
+            staging = Path(folder)
+            preview = staging / "soundcloud-preview.zip"
+            if is_soundcloud(url) and soundcloud_video:
+                from tools.soundcloud_video import make_soundcloud_video
 
-            video_path = await make_soundcloud_video(
-                str(original), media.artwork_url, media.title, media.uploader, MAX_FILE_BYTES,
-                settings=video_settings, preview_path=destination / "soundcloud-preview.zip",
-            )
-            if video_path is None:
-                raise ValueError("SoundCloud-aaltomuotovideon luonti epäonnistui.")
-            rendered = Path(video_path)
-        with TemporaryDirectory(prefix="clipboard-") as folder:
+                video_path = await make_soundcloud_video(
+                    str(original), media.artwork_url, media.title, media.uploader, MAX_FILE_BYTES,
+                    settings=video_settings, preview_path=preview,
+                )
+                if video_path is None:
+                    raise ValueError("SoundCloud-aaltomuotovideon luonti epäonnistui.")
+                rendered = Path(video_path)
             source = rendered or original
             if source.stat().st_size > MAX_FILE_BYTES and media.is_video:
                 from tools.vid_compress import compress_to_720p
 
-                source = Path(folder) / "compressed.mp4"
+                source = staging / "compressed.mp4"
                 report("compress", "Pakataan videota kokorajaan…")
                 compress_to_720p(
                     str(original.resolve()), str(source), target_size_mb=140,
-                    passlog_prefix=str(Path(folder) / "ffmpeg2pass"),
+                    passlog_prefix=str(staging / "ffmpeg2pass"),
                 )
             if not 0 < source.stat().st_size <= MAX_FILE_BYTES:
                 raise ValueError("Tiedosto on tyhjä tai ylittää 150 MB:n rajan.")
             report("save", "Tarkistetaan ja tallennetaan valmis tiedosto…")
-            destination.mkdir(parents=True)
             output = destination / f"media{source.suffix}"
-            shutil.move(source, output)
+            staged_output = staging / output.name
+            shutil.move(source, staged_output)
+            staged_output.replace(output)
+            if rendered is not None:
+                published_preview = destination / preview.name
+                if preview.is_file():
+                    preview.replace(published_preview)
+                else:
+                    published_preview.unlink(missing_ok=True)
             return output
     finally:
         original.unlink(missing_ok=True)
