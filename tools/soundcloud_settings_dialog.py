@@ -2,7 +2,7 @@
 from dataclasses import asdict
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QFormLayout, QSpinBox, QComboBox,
-    QCheckBox, QDialogButtonBox, QMessageBox, QScrollArea, QWidget,
+    QCheckBox, QGroupBox, QDialogButtonBox, QMessageBox, QScrollArea, QWidget,
 )
 from tools.soundcloud_video_preview import SoundCloudVideoPreview
 from tools.soundcloud_video_settings import MAX_VIDEO_BANDS, SoundCloudVideoSettings
@@ -66,7 +66,38 @@ class SoundCloudSettingsDialog(QDialog):
         columns = QHBoxLayout()
         columns.addWidget(scroll, stretch=1)
         preview = SoundCloudVideoPreview(settings, self)
-        columns.addWidget(preview)
+        preview_column = QVBoxLayout()
+        preview_column.addWidget(preview)
+        floor_group = QGroupBox("Beatfloor")
+        floor_form = QFormLayout(floor_group)
+        enabled = QCheckBox("Näytä iskulinjat")
+        self.controls["beat_floor_enabled"] = enabled
+        floor_form.addRow(enabled)
+        for name, label, low, high, suffix in (
+            ("beat_floor_x_offset", "Vaakasiirto", -160, 160, " px"),
+            ("beat_floor_y_offset", "Pystysiirto", -105, 20, " px"),
+            ("beat_floor_depth_percent", "Syvyys", 20, 130, " %"),
+            ("beat_floor_far_width_percent", "Horisontin leveys", 10, 300, " %"),
+            ("beat_floor_near_width_percent", "Etualan leveys", 25, 150, " %"),
+        ):
+            control = QSpinBox()
+            control.setRange(low, high)
+            control.setSuffix(suffix)
+            self.controls[name] = control
+            floor_form.addRow(label, control)
+        preview_column.addWidget(floor_group)
+        columns.addLayout(preview_column)
+
+        def update_floor():
+            preview.set_floor_settings({
+                name: control.isChecked() if isinstance(control, QCheckBox) else control.value()
+                for name, control in self.controls.items() if name.startswith("beat_floor_")
+            })
+
+        enabled.toggled.connect(update_floor)
+        for name, control in self.controls.items():
+            if name.startswith("beat_floor_") and isinstance(control, QSpinBox):
+                control.valueChanged.connect(update_floor)
         layout.addLayout(columns)
         self.finished.connect(preview.stop)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults)
@@ -82,6 +113,7 @@ class SoundCloudSettingsDialog(QDialog):
         except (ValueError, TypeError):
             current = SoundCloudVideoSettings()
         self.populate(current)
+        update_floor()
 
     def populate(self, values):
         for name, value in asdict(values).items():

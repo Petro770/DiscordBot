@@ -6,8 +6,9 @@ from math import exp, pi, sin
 from pathlib import Path
 from shutil import which
 
-from PIL import Image
+from PIL import Image, ImageChops
 
+from tools.soundcloud_preview_source import SoundCloudPreviewSource
 from tools.soundcloud_beats import estimate_beat_grid, read_beat_grid
 from tools.soundcloud_video import _BEAT_FLOOR_HEIGHT, _WAVE_HEIGHT, _draw_beat_sweep, _wave_frames
 from tools.soundcloud_video_settings import SoundCloudVideoSettings
@@ -73,3 +74,15 @@ class SoundCloudBeatTests(unittest.TestCase):
         frame = next(_wave_frames(envelope, settings, beat_times=(2.0,)))
         self.assertEqual(frame[:len(waveform)], waveform)
         self.assertFalse(any(frame[len(waveform):]))
+
+    def test_preview_applies_floor_settings_at_the_same_timestamp(self):
+        source = SoundCloudPreviewSource.example()
+        original = source.frame(1.0, {})
+        adjusted = source.frame(1.0, {
+            "beat_floor_x_offset": 40,
+            "beat_floor_y_offset": -95,
+            "beat_floor_depth_percent": 75,
+        })
+        without_floor = source.frame(1.0, {"beat_floor_enabled": False})
+        self.assertIsNotNone(ImageChops.difference(original, adjusted).getbbox())
+        self.assertIsNotNone(ImageChops.difference(original, without_floor).getbbox())

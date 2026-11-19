@@ -71,7 +71,7 @@ async def download_media(url: str, destination: Path, soundcloud_video: bool = T
 
             video_path = await make_soundcloud_video(
                 str(original), media.artwork_url, media.title, media.uploader, MAX_FILE_BYTES,
-                settings=video_settings,
+                settings=video_settings, preview_path=destination / "soundcloud-preview.zip",
             )
             if video_path is None:
                 raise ValueError("SoundCloud-aaltomuotovideon luonti epäonnistui.")
