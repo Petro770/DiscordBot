@@ -1,7 +1,10 @@
 """Muodosta SoundCloud-kappaleesta kansikuvallinen MP4."""
 import asyncio
+from base64 import b64encode
+from bisect import bisect_left, bisect_right
 import colorsys
 import io
+import json
 import math
 import os
 import random
@@ -14,13 +17,15 @@ from collections import OrderedDict
 from pathlib import Path
 from threading import Event, Timer
 from time import monotonic
+from zipfile import ZipFile, ZIP_DEFLATED
 
 import aiohttp
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageChops
 from static_ffmpeg import run
 
 from core.logging import log
-from tools.download_progress import report
+from tools.download_progress import progress_enabled, report
+from tools.soundcloud_beats import estimate_beat_grid, estimate_downbeat_phase, read_beat_grid
 from tools.soundcloud_video_settings import SoundCloudVideoSettings
 from downloaders.base import finalize
 
@@ -31,9 +36,12 @@ _ARTWORK_URL = re.compile(
 _MAX_ARTWORK_BYTES = 5 * 1024 * 1024
 _FRAME_SIZE = 640
 _INTRO_SECONDS = 5
+_WAVE_Y = 380
+_TITLE_Y = 22
 _ENVELOPE_HZ = 120
 _WAVE_WIDTH = _FRAME_SIZE
 _WAVE_HEIGHT = 112
+_BEAT_FLOOR_HEIGHT = _FRAME_SIZE - _WAVE_Y
 _NO_CONSOLE = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # Taajuuskaista, aikaikkunan leveys (s), pystysijainti, väri ja viivan leveys.
 _WAVE_BANDS = (
@@ -139,7 +147,7 @@ def _wave_alpha(level: float, peak: float) -> int:
     return min(255, round(1.30 * (28 + 207 * strength ** 0.50)))
 
 
-def _read_envelopes(ffmpeg: str, audio_path: str, settings=SoundCloudVideoSettings()) -> tuple[array, ...]:
+def _envelope_arguments(audio_path: str, settings):
     count = settings.bands
     filters = [f"[0:a]aformat=channel_layouts=mono,asplit={count}" + "".join(f"[b{i}]" for i in range(count))]
     for index, (band_filter, *_style) in enumerate(_band_styles(settings)):
@@ -153,19 +161,27 @@ def _read_envelopes(ffmpeg: str, audio_path: str, settings=SoundCloudVideoSettin
         "".join(f"[e{i}]" for i in range(count))
         + f"concat=n={count}:v=0:a=1[envelopes]"
     )
-    result = subprocess.run(
-        [ffmpeg, "-nostdin", "-loglevel", "error", "-i", audio_path,
-         "-filter_complex", ";".join(filters), "-map", "[envelopes]", "-f", "f32le", "pipe:1"],
-        check=True, capture_output=True, timeout=120, creationflags=_NO_CONSOLE,
-    )
+    return ["-nostdin", "-loglevel", "error", "-i", audio_path,
+            "-filter_complex", ";".join(filters), "-map", "[envelopes]", "-f", "f32le", "pipe:1"]
+
+
+def _decode_envelopes(data: bytes, count: int) -> tuple[array, ...]:
     samples = array("f")
-    samples.frombytes(result.stdout)
+    samples.frombytes(data)
     if sys.byteorder != "little":
         samples.byteswap()
     if len(samples) % count:
         raise ValueError("Taajuuskaistojen analyysi tuotti eripituiset kaistat.")
     band_length = len(samples) // count
     return tuple(samples[index * band_length:(index + 1) * band_length] for index in range(count))
+
+
+def _read_envelopes(ffmpeg: str, audio_path: str, settings=SoundCloudVideoSettings()) -> tuple[array, ...]:
+    result = subprocess.run(
+        [ffmpeg, *_envelope_arguments(audio_path, settings)],
+        check=True, capture_output=True, timeout=120, creationflags=_NO_CONSOLE,
+    )
+    return _decode_envelopes(result.stdout, settings.bands)
 
 
 def _envelope_at(band: array, position: float) -> float:
@@ -263,7 +279,7 @@ class _WaveStrip:
 
 
 
-def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(), palette=None):
+def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(), palette=None, beat_times=(), *, start_frame=0, downbeat_phase=None):
     styles = _band_styles(settings)
     centers = _wave_centers(styles, settings)
     palette = palette or _wave_palette(None, len(envelopes))
@@ -275,7 +291,8 @@ def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(
         for band, maximum, style, color in zip(envelopes, maxima, styles, palette)
     ]
     # Prepare invariant background and edge fade just once per render.
-    background = Image.new("RGBA", (_WAVE_WIDTH, _WAVE_HEIGHT))
+    overlay_height = _BEAT_FLOOR_HEIGHT if beat_times and settings.beat_floor_enabled else _WAVE_HEIGHT
+    background = Image.new("RGBA", (_WAVE_WIDTH, overlay_height))
     if settings.wave_background:
         ImageDraw.Draw(background).rounded_rectangle(
             (0, 0, _WAVE_WIDTH - 1, _WAVE_HEIGHT - 1), radius=16,
@@ -288,18 +305,78 @@ def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(
         edge_alpha.append(round(255 * amount * amount * (3 - 2 * amount)))
     edge_mask = Image.new("L", (_WAVE_WIDTH, 1))
     edge_mask.putdata(edge_alpha)
-    edge_mask = edge_mask.resize((_WAVE_WIDTH, _WAVE_HEIGHT))
+    edge_mask = edge_mask.resize(background.size)
+    floor = Image.new("RGBA", background.size) if overlay_height > _WAVE_HEIGHT else None
     frame_count = (len(envelopes[0]) * settings.fps + _ENVELOPE_HZ - 1) // _ENVELOPE_HZ
-    for frame_index in range(frame_count):
+    for frame_index in range(start_frame, frame_count):
         now = frame_index * _ENVELOPE_HZ / settings.fps
         frame = background.copy()
+        if floor is not None:
+            floor_frame = floor.copy()
+            _draw_beat_sweep(floor_frame, beat_times, frame_index / settings.fps, palette[0], settings, downbeat_phase=downbeat_phase)
+            frame.alpha_composite(floor_frame)
         for strip, center in zip(strips, centers):
             frame.alpha_composite(strip.frame(now), (0, round(center - strip.amplitude - strip.margin)))
         frame.putalpha(ImageChops.multiply(frame.getchannel("A"), edge_mask))
         yield frame.tobytes()
 
 
-def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: int | None, settings=SoundCloudVideoSettings(), palette=None) -> None:
+def _draw_beat_sweep(
+    floor: Image.Image, beat_times: tuple[float, ...], now: float, color: tuple[int, int, int],
+    settings=SoundCloudVideoSettings(), *, downbeat_phase: int | None = None,
+) -> None:
+    half_travel = 0.85
+    first = bisect_left(beat_times, now - half_travel)
+    last = bisect_right(beat_times, now + half_travel)
+    draw = ImageDraw.Draw(floor)
+    center = _WAVE_WIDTH / 2 + settings.beat_floor_x_offset
+    horizon_y = 108.28 + settings.beat_floor_y_offset
+    foreground_y = horizon_y + settings.beat_floor_height
+    horizon_width = 51.36 * settings.beat_floor_far_width_percent / 100
+    foreground_width = 305.4 * settings.beat_floor_near_width_percent / 100
+    highlight = tuple(round((channel + 255) / 2) for channel in color)
+    for index in range(first, last):
+        age = now - beat_times[index]
+        accented = settings.beat_floor_accent_every_four and index % 4 == downbeat_phase
+        # Translate in floor space. The wider foreground moves more pixels per
+        # frame than the horizon, and the line crosses center exactly on the beat.
+        position = -age / half_travel
+        pulse = max(0, 1 - abs(age) / 0.12)
+        fade = min(1, 4 * (1 - abs(position)))
+        alpha = round(fade * min(255, 118 + 137 * pulse + 32 * accented))
+        if alpha:
+            draw.line(
+                (center + position * horizon_width, horizon_y,
+                 center + position * foreground_width, foreground_y),
+                fill=(*(highlight if pulse or accented else color), alpha),
+                width=2 + round(2 * pulse) + 3 * accented,
+            )
+
+
+def _compose_preview(frame, seconds, cover, intro, title_image, intro_seconds):
+    canvas = (intro if seconds < intro_seconds else cover).convert("RGBA")
+    if seconds < intro_seconds:
+        travel = title_image.width - (_FRAME_SIZE - 64)
+        x = (_FRAME_SIZE - title_image.width) // 2
+        if travel > 0:
+            progress = min(1, max(0, (seconds - 0.5) / max(0.1, intro_seconds - 1)))
+            x = round(32 - travel * progress)
+        canvas.alpha_composite(title_image, (x, _TITLE_Y))
+    canvas.alpha_composite(Image.frombytes("RGBA", (_WAVE_WIDTH, len(frame) // (_WAVE_WIDTH * 4)), frame), (0, _WAVE_Y))
+    return canvas.convert("RGB")
+
+
+def _report_preview(frame, seconds, cover, intro, title_image, intro_seconds):
+    preview = _compose_preview(frame, seconds, cover, intro, title_image, intro_seconds)
+    preview.thumbnail((240, 240), Image.Resampling.LANCZOS)
+    output = io.BytesIO()
+    preview.save(output, format="JPEG", quality=68)
+    payload = b64encode(output.getvalue()).decode("ascii")
+    if len(payload) < 60_000:
+        report("preview", image=payload)
+
+
+def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: int | None, settings=SoundCloudVideoSettings(), palette=None, beat_times=(), *, preview=None, downbeat_phase=None) -> None:
     with tempfile.TemporaryFile() as errors, subprocess.Popen(
         command, stdin=subprocess.PIPE, stderr=errors, creationflags=_NO_CONSOLE,
     ) as ffmpeg:
@@ -324,6 +401,7 @@ def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: 
         watchdog.daemon = True
         started = last_update = monotonic()
         last_progress = started
+        last_preview = -math.inf
         total_frames = (len(envelopes[0]) * settings.fps + _ENVELOPE_HZ - 1) // _ENVELOPE_HZ
         report("render", "Muodostetaan aaltomuotovideota…", 0)
         frames_written = 0
@@ -331,11 +409,14 @@ def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: 
         watchdog.start()
         try:
             with ffmpeg.stdin as frames:
-                for frame in _wave_frames(envelopes, settings, palette):
+                for frame in _wave_frames(envelopes, settings, palette, beat_times, downbeat_phase=downbeat_phase):
                     frames.write(frame)
                     last_activity = monotonic()
                     frames_written += 1
                     now = monotonic()
+                    if preview is not None and now - last_preview >= 0.5:
+                        preview(frame, (frames_written - 1) / settings.fps)
+                        last_preview = now
                     if now - last_progress >= 0.5:
                         speed = frames_written / max(now - started, 0.001)
                         report("render", f"{frames_written}/{total_frames} ruutua · {speed:.1f} ruutua/s",
@@ -428,7 +509,7 @@ def _compress_for_upload(
 
 def _render_video(
     audio_path: str, artwork: Image.Image | None, title: str, artist: str, file_limit: int,
-    message_id: int | None, settings=SoundCloudVideoSettings(),
+    message_id: int | None, settings=SoundCloudVideoSettings(), *, preview_path: Path | None = None,
 ) -> str | None:
     cover = ImageOps.pad(
         artwork if artwork is not None else _fallback_cover(),
@@ -448,10 +529,33 @@ def _render_video(
     report("analysis", f"Analysoidaan {settings.bands} taajuuskaistaa…")
     envelopes = _read_envelopes(ffmpeg, audio_path, settings)
     duration = len(envelopes[0]) / _ENVELOPE_HZ
+    report("analysis", "Tunnistetaan kappaleen tempoa…")
+    try:
+        beat_grid = read_beat_grid(ffmpeg, audio_path)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        log.warning("SoundCloud-video [%s]: tempoanalyysi epäonnistui", message_id, exc_info=True)
+        beat_grid = None
+    if beat_grid is None:
+        # The existing visualization bands can recover percussion that a
+        # bass-only pass misses. Try the stronger bands first.
+        for envelope in sorted(envelopes, key=lambda band: max(band, default=0), reverse=True)[:3]:
+            beat_grid = estimate_beat_grid(envelope, relaxed=True)
+            if beat_grid is not None:
+                break
+    if beat_grid:
+        log.info("SoundCloud-video [%s]: tempo %.1f BPM (%.2f BPS)",
+                 message_id, beat_grid.bpm, beat_grid.bpm / 60)
+        report("analysis", f"Tempo {beat_grid.bpm:.1f} BPM ({beat_grid.bpm / 60:.2f} BPS)")
+    elif settings.beat_floor_enabled:
+        log.warning("SoundCloud-video [%s]: sykkeelle ei löytynyt luotettavaa tempoa", message_id)
+        report("analysis", "Tempoa ei tunnistettu. Video muodostetaan ilman iskulinjoja.")
     log.info(
         "SoundCloud-video [%s]: analyysi valmis %.1f sekunnissa, äänen kesto %.1f s",
         message_id, monotonic() - started, duration,
     )
+    beat_times = beat_grid.seconds if beat_grid else ()
+    downbeat_phase = estimate_downbeat_phase(envelopes[0], beat_times)
+    overlay_height = _BEAT_FLOOR_HEIGHT if beat_times and settings.beat_floor_enabled else _WAVE_HEIGHT
     with tempfile.TemporaryDirectory(prefix="soundcloud_video_") as directory:
         cover_path = Path(directory) / "cover.png"
         intro_path = Path(directory) / "intro.png"
@@ -460,24 +564,28 @@ def _render_video(
         cover.save(cover_path)
         intro.save(intro_path)
         title_image.save(title_path)
+        def preview(frame, seconds):
+            _report_preview(frame, seconds, cover, intro, title_image, settings.intro_seconds)
+
         _encode_video(
             [
                 ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error",
                 "-loop", "1", "-framerate", str(settings.fps), "-i", str(cover_path),
                 "-i", str(intro_path), "-i", audio_path, "-i", str(title_path),
                 "-f", "rawvideo", "-pixel_format", "rgba",
-                "-video_size", f"{_WAVE_WIDTH}x{_WAVE_HEIGHT}",
+                "-video_size", f"{_WAVE_WIDTH}x{overlay_height}",
                 "-framerate", str(settings.fps), "-i", "pipe:0",
                 "-filter_complex_threads", "1", "-filter_complex",
                 f"[0:v][1:v]overlay=enable='lt(t,{settings.intro_seconds})'[intro];"
-                f"[intro][3:v]overlay=x='{title_x}':y=22:enable='lt(t,{settings.intro_seconds})'[cover];"
-                f"[cover][4:v]overlay=x=0:y=380:eof_action=pass,scale={settings.resolution}:{settings.resolution}[video]",
+                f"[intro][3:v]overlay=x='{title_x}':y={_TITLE_Y}:enable='lt(t,{settings.intro_seconds})'[cover];"
+                f"[cover][4:v]overlay=x=0:y={_WAVE_Y}:eof_action=pass,scale={settings.resolution}:{settings.resolution}[video]",
                 "-map", "[video]", "-map", "2:a:0", "-shortest", "-t", str(duration),
                 "-c:v", "libx264", "-preset", settings.preset, "-crf", str(settings.crf),
                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", f"{settings.audio_kbps}k",
                 "-movflags", "+faststart", str(video_path),
             ],
             envelopes, message_id, settings, _wave_palette(cover, settings.bands),
+            beat_times, preview=preview if progress_enabled() else None, downbeat_phase=downbeat_phase,
         )
         video_size = os.path.getsize(video_path)
         if video_size > file_limit:
@@ -495,7 +603,23 @@ def _render_video(
             video_path = compressed_path
             video_size = video_path.stat().st_size
         log.info("SoundCloud-video [%s]: MP4 valmis (%d tavua, raja %d)", message_id, video_size, file_limit)
-        return finalize(str(video_path), "soundcloud")
+        result = finalize(str(video_path), "soundcloud")
+        if preview_path is not None:
+            try:
+                preview_path.parent.mkdir(parents=True, exist_ok=True)
+                with ZipFile(preview_path, "w", ZIP_DEFLATED, compresslevel=1) as archive:
+                    archive.write(cover_path, "cover.png")
+                    archive.write(intro_path, "intro.png")
+                    archive.write(title_path, "title.png")
+                    archive.writestr("settings.json", settings.to_json())
+                    archive.writestr("beats.json", json.dumps(beat_times))
+                    archive.writestr("downbeat.json", json.dumps(downbeat_phase))
+                    for index, envelope in enumerate(envelopes):
+                        archive.writestr(f"band-{index}.bin", envelope.tobytes())
+            except OSError:
+                log.warning("SoundCloud-video [%s]: esikatseludataa ei voitu tallentaa", message_id, exc_info=True)
+        report("soundcloud_video", ffmpeg=str(ffmpeg), duration=duration, fps=settings.fps)
+        return result
 
 
 def _decode_artwork(data: bytes) -> Image.Image | None:
@@ -509,6 +633,7 @@ async def make_soundcloud_video(
     audio_path: str, artwork_url: str, title: str, artist: str, file_limit: int,
     *, avatar_url: str = "", message_id: int | None = None,
     settings: SoundCloudVideoSettings | None = None,
+    preview_path: Path | None = None,
 ) -> str | None:
     report("artwork", "Haetaan videon kansikuvaa…")
     cover = None
@@ -531,7 +656,7 @@ async def make_soundcloud_video(
     if cover is None:
         log.info("SoundCloud-video [%s]: piirretään varakuva", message_id)
     try:
-        return await asyncio.to_thread(_render_video, audio_path, cover, title, artist, file_limit, message_id, settings or SoundCloudVideoSettings())
+        return await asyncio.to_thread(_render_video, audio_path, cover, title, artist, file_limit, message_id, settings or SoundCloudVideoSettings(), preview_path=preview_path)
     except subprocess.CalledProcessError as error:
         details = (error.stderr or b"").decode(errors="replace")
         log.error("SoundCloud-video [%s]: FFmpeg-virhe (%s): %s", message_id, error.returncode, details[-1000:])

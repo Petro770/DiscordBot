@@ -132,7 +132,7 @@ class SoundCloudVideoSettingsTests(unittest.TestCase):
         def timer(interval, callback):
             timers.append((interval, callback, Mock()))
             return timers[-1][2]
-        def frames(*args):
+        def frames(*args, **kwargs):
             yield b"frame"
             for now in ticks:
                 clock[0] = now

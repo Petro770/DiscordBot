@@ -1,7 +1,9 @@
 """Live phase timings for one clipboard download."""
+from base64 import b64decode
 from time import monotonic
-from PyQt5.QtCore import QTimer
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QPlainTextEdit
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QPixmap
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QPlainTextEdit, QCheckBox
 
 STAGES = {
     "starting": "Käynnistys", "resolve": "Linkin selvitys", "prepare": "Latauksen valmistelu",
@@ -28,6 +30,14 @@ class DownloadProgressWidget(QWidget):
         self.history.setMaximumHeight(100)
         for widget in (self.phase, self.timing, self.bar, self.history):
             layout.addWidget(widget)
+        self.preview_toggle = QCheckBox("Näytä renderöinnin esikatselu")
+        self.preview = QLabel("Odotetaan renderöinnin ensimmäistä ruutua…")
+        self.preview.setAlignment(Qt.AlignCenter)
+        self.preview_toggle.toggled.connect(self.preview.setVisible)
+        layout.addWidget(self.preview_toggle)
+        layout.addWidget(self.preview)
+        self.preview_toggle.hide()
+        self.preview.hide()
         self.timer = QTimer(self)
         self.timer.setInterval(1000)
         self.timer.timeout.connect(self.refresh)
@@ -37,14 +47,29 @@ class DownloadProgressWidget(QWidget):
     def begin(self):
         self.timer.stop()
         self.history.clear()
+        self.preview_toggle.hide()
+        self.preview.hide()
+        self.preview.setText("Odotetaan renderöinnin ensimmäistä ruutua…")
         self.stage = None
         self.started = self.stage_started = self.updated = monotonic()
         self.update_progress(dict(stage="starting", detail="Käynnistetään latausprosessia…"))
         self.timer.start()
 
+    def update_preview(self, image):
+        try:
+            data = b64decode(image, validate=True)
+        except (ValueError, TypeError):
+            return
+        pixmap = QPixmap()
+        if pixmap.loadFromData(data, "JPEG"):
+            self.preview.setPixmap(pixmap)
+
     def update_progress(self, event):
         now = monotonic()
         stage = event["stage"]
+        if stage == "render":
+            self.preview_toggle.show()
+            self.preview.setVisible(self.preview_toggle.isChecked())
         if self.stage != stage:
             if self.stage is not None:
                 self.history.appendPlainText(f"{STAGES.get(self.stage, self.stage)}: {now - self.stage_started:.1f} s")

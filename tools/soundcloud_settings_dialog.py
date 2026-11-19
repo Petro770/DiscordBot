@@ -1,9 +1,10 @@
 """SoundCloud clipboard video preferences."""
 from dataclasses import asdict
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QFormLayout, QSpinBox, QComboBox,
-    QCheckBox, QDialogButtonBox, QMessageBox, QScrollArea, QWidget,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QFormLayout, QSpinBox, QComboBox,
+    QCheckBox, QGroupBox, QDialogButtonBox, QMessageBox, QScrollArea, QWidget,
 )
+from tools.soundcloud_video_preview import SoundCloudVideoPreview
 from tools.soundcloud_video_settings import MAX_VIDEO_BANDS, SoundCloudVideoSettings
 
 
@@ -12,7 +13,7 @@ class SoundCloudSettingsDialog(QDialog):
         super().__init__(parent)
         self.settings = settings
         self.setWindowTitle("SoundCloud-videon oletusasetukset")
-        self.resize(580, 620)
+        self.resize(880, 620)
         layout = QVBoxLayout(self)
         info = QLabel(
             "Asetukset koskevat seuraavia leikepöydältä tehtäviä SoundCloud-videoita. "
@@ -62,7 +63,55 @@ class SoundCloudSettingsDialog(QDialog):
         form.addRow(compress)
         self.controls["auto_compress"] = compress
         scroll.setWidget(body)
-        layout.addWidget(scroll)
+        columns = QHBoxLayout()
+        columns.addWidget(scroll, stretch=1)
+        preview = SoundCloudVideoPreview(settings, self)
+        preview_column = QVBoxLayout()
+        preview_column.addWidget(preview)
+        floor_group = QGroupBox("Beatfloor")
+        floor_form = QFormLayout(floor_group)
+        enabled = QCheckBox("Näytä iskulinjat")
+        self.controls["beat_floor_enabled"] = enabled
+        floor_form.addRow(enabled)
+        accent = QCheckBox("Korosta tunnistetut tahdin alut")
+        self.controls["beat_floor_accent_every_four"] = accent
+        floor_form.addRow(accent)
+        for name, label, low, high, suffix in (
+            ("beat_floor_x_offset", "Vaakasiirto", -160, 160, " px"),
+            ("beat_floor_y_offset", "Pystysiirto", -105, 20, " px"),
+            ("beat_floor_height", "Iskulinjojen korkeus", 12, 256, " px"),
+            ("beat_floor_far_width_percent", "Horisontin leveys", 10, 1000, " %"),
+            ("beat_floor_near_width_percent", "Etualan leveys", 25, 150, " %"),
+        ):
+            control = QSpinBox()
+            control.setRange(low, high)
+            control.setSuffix(suffix)
+            self.controls[name] = control
+            floor_form.addRow(label, control)
+        self.controls["beat_floor_height"].setToolTip(
+            "Horisontin ja etureunan välinen pystyetäisyys 640 × 640 -peruskoossa."
+        )
+        self.controls["beat_floor_y_offset"].setToolTip(
+            "Siirtää horisonttia ja etureunaa yhdessä. Negatiivisempi arvo nostaa iskulinjoja."
+        )
+        preview_column.addWidget(floor_group)
+        columns.addLayout(preview_column)
+
+        def update_preview():
+            values = self.control_values()
+            preview.set_render_settings({
+                name: value for name, value in values.items()
+                if name.startswith(("wave_", "beat_floor_"))
+                or name in ("bands", "fps", "resolution", "intro_seconds")
+            })
+
+        for control in self.controls.values():
+            if isinstance(control, QCheckBox):
+                control.toggled.connect(update_preview)
+            elif isinstance(control, QSpinBox):
+                control.valueChanged.connect(update_preview)
+        layout.addLayout(columns)
+        self.finished.connect(preview.stop)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults)
         buttons.button(QDialogButtonBox.Save).setText("Tallenna")
         buttons.button(QDialogButtonBox.Cancel).setText("Peruuta")
@@ -76,6 +125,7 @@ class SoundCloudSettingsDialog(QDialog):
         except (ValueError, TypeError):
             current = SoundCloudVideoSettings()
         self.populate(current)
+        update_preview()
 
     def populate(self, values):
         for name, value in asdict(values).items():
@@ -89,14 +139,17 @@ class SoundCloudSettingsDialog(QDialog):
 
         self.controls["wave_opacity"].setEnabled(self.controls["wave_background"].isChecked())
 
-    def save(self):
+    def control_values(self):
         values = {}
         for name, control in self.controls.items():
             values[name] = (control.isChecked() if isinstance(control, QCheckBox)
                             else control.currentText() if isinstance(control, QComboBox)
                             else control.value())
+        return values
+
+    def save(self):
         try:
-            result = SoundCloudVideoSettings(**values)
+            result = SoundCloudVideoSettings(**self.control_values())
         except ValueError as error:
             QMessageBox.warning(self, "Tarkista asetukset", str(error))
             return

@@ -167,6 +167,7 @@ class BotManagerApp(QMainWindow):
         environment.insert("PYTHONIOENCODING", "utf-8")
         self.download_process.setProcessEnvironment(environment)
         self._progress_reader = ProgressReader()
+        self._rendered_video = None
         self.download_process.readyReadStandardOutput.connect(self._read_download_progress)
         self.download_process.started.connect(lambda: self.notification_sounds.play("started"))
         self.download_process.finished.connect(self._download_finished)
@@ -264,6 +265,7 @@ class BotManagerApp(QMainWindow):
         self._download_dir = PROJECT_DIR / "clipboard_downloads" / uuid4().hex
         self.download_status.setText("Ladataan mediaa…")
         self._progress_reader = ProgressReader()
+        self._rendered_video = None
         self.download_progress.begin()
         python = Path(sys.executable)
         if python.name.lower() == "pythonw.exe" and python.with_name("python.exe").is_file():
@@ -280,7 +282,12 @@ class BotManagerApp(QMainWindow):
     def _read_download_progress(self):
         chunk = bytes(self.download_process.readAllStandardOutput())
         for event in self._progress_reader.feed(chunk):
-            self.download_progress.update_progress(event)
+            if event["stage"] == "preview":
+                self.download_progress.update_preview(event.get("image"))
+            elif event["stage"] == "soundcloud_video":
+                self._rendered_video = event
+            else:
+                self.download_progress.update_progress(event)
 
     def _download_finished(self, exit_code, exit_status):
         self._read_download_progress()
@@ -289,6 +296,11 @@ class BotManagerApp(QMainWindow):
             files = list(self._download_dir.glob("media.*"))
             if len(files) == 1 and files[0].is_file() and 0 < files[0].stat().st_size <= MAX_FILE_BYTES:
                 self.download_progress.finish(True)
+                if self._rendered_video and files[0].suffix.lower() == ".mp4":
+                    video = self._rendered_video
+                    self.settings.setValue("clipboard/lastSoundCloudVideo", [
+                        str(files[0]), video["ffmpeg"], str(video["duration"]), str(video["fps"]),
+                    ])
                 if not self.clipboard_checkbox.isChecked():
                     self.download_status.setText(f"Lataus tallennettu kansioon {self._download_dir.name}.")
                     self.notification_sounds.play("finished")
