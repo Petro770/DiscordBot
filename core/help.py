@@ -67,6 +67,7 @@ Lähetä linkki (YouTube, Instagram, X, TikTok, Twitch, SoundCloud) tai kuva →
 • `UNOHDAMINUT` – poista kaikki tietoni ja DM-historia
 • `OHJE` – näytä tämä ohje
 • `OHJE SISÄLTÖ` – lisätieto sisältö-asetuksesta
+• `OHJE ASETUKSET` – käyttäjäkohtaiset varoitusasetukset
 
 **Esimerkki:**
 `POISTA JAA https://youtu.be/xxxxx`
@@ -94,6 +95,16 @@ SISÄLTÖ POIS:
   [tiedosto.mp4]
 
 *Asetus on pysyvä ja käyttäjäkohtainen.*"""
+
+
+HELP_SETTINGS = """⚙️ **Käyttäjäasetukset**
+
+• `KUVAKOPIOVAROITUS KANAVA` / `DM` / `POIS` – mahdolliset kuvakopiot
+• `REPOSTAUSVAROITUS KANAVA` / `DM` / `POIS` – täsmälliset liitekopiot
+
+Molempien oletus on `KANAVA`. `DM` lähettää varoituksen yksityisviestinä ja `POIS` kytkee sen pois.
+Voit muuttaa omia asetuksiasi botin yksityisviestissä tai sen kohdekanavalla.
+Sisältöasetuksen ohje löytyy komennolla `OHJE SISÄLTÖ`."""
 
 
 HELP_DELETE = """🗑️ **POISTA-komento**
@@ -150,6 +161,8 @@ async def handle_help(message: discord.Message) -> bool:
         content = HELP_GENERAL
     elif topic == "content":
         content = HELP_CONTENT
+    elif topic == "settings":
+        content = HELP_SETTINGS
     elif topic == "delete":
         content = HELP_DELETE
     elif topic == "forward":

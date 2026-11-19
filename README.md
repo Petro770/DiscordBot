@@ -63,7 +63,21 @@ Botti indeksoi uudet liitteet oletuksena `TARGET_CHANNEL_ID`-kanavalta.
 Voit valita muita kanavia asettamalla `ATTACHMENT_INDEX_CHANNEL_IDS`-muuttujaan
 kanavien tunnisteet pilkuilla erotettuina. Tyhjä arvo poistaa indeksoinnin käytöstä.
 Kun käyttäjän uuden viestin liitteelle löytyy aiempi osuma samalta kanavalta,
-botti vastaa kanavalla liitteen sisältävään viestiin. Varoitus näyttää
+botti varoittaa oletuksena vastaamalla kanavalla liitteen sisältävään viestiin.
+Voit valita varoitustavan erikseen mahdollisille kuvakopioille ja täsmällisille
+liitekopioille botin yksityisviestissä tai sen kohdekanavalla.
+
+| Komento | Varoituksen tyyppi |
+| --- | --- |
+| `KUVAKOPIOVAROITUS KANAVA` / `DM` / `POIS` | Mahdollinen kuvakopio |
+| `REPOSTAUSVAROITUS KANAVA` / `DM` / `POIS` | Täsmällinen liitekopio |
+
+`KANAVA` on oletus, `DM` lähettää varoituksen yksityisviestinä ja `POIS` kytkee
+varoituksen pois. Asetukset tallentuvat käyttäjäkohtaisesti. Jos yksityisviestin
+lähetys epäonnistuu, julkista varoitusta ei lähetetä. Liitteet indeksoidaan
+kaikilla asetuksilla. Discordissa ohjeen saa komennolla `OHJE ASETUKSET`.
+
+Varoitus näyttää
 samankaltaisuuspisteet. Mahdolliselle kuvakopiolle näytetään myös pHash-etäisyys
 ja värikartan keskimääräinen ero.
 Täsmälliselle kopiolle viestissä näkyvät lähettäjän oma määrä, kanavan
@@ -76,8 +90,8 @@ huomautetaan, kun yhdistetty
 samankaltaisuuspiste on oletuksena vähintään 90 %. Pisteessä pHashin paino on
 70 % ja värikartan 30 %. Automaattisen varoituksen rajan voi vaihtaa
 `.env`-asetuksella `REPOST_WARNING_THRESHOLD=92.5` (0–100). Käynnistä botti
-uudelleen asetuksen muuttamisen jälkeen. Täsmälliset SHA-256-osumat varoitetaan
-aina, ja `/duplikaatit`-haun kuvavertailun raja on 90 %.
+uudelleen asetuksen muuttamisen jälkeen. Täsmälliset SHA-256-osumat eivät riipu
+samankaltaisuusrajasta. `/duplikaatit`-haun kuvavertailun raja on 90 %.
 
 - `/indeksoi` lukee nykyisen kanavan historiaa enintään 1 000 viestiä kerrallaan.
   Komento vaatii käyttäjältä **Manage Messages** -oikeuden. Jos historiaa on vielä

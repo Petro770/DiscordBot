@@ -20,7 +20,20 @@ USER_DATA_FILE = BASE_DIR / "user_data.json"
 # OLETUSASETUKSET
 # ============================================================
 
+WARNING_SETTINGS = {
+    "KUVAKOPIOVAROITUS": "image_duplicate_warning",
+    "REPOSTAUSVAROITUS": "repost_warning",
+}
+WARNING_MODES = {"KANAVA": "channel", "DM": "dm", "POIS": "off"}
+WARNING_MODE_LABELS = {
+    "channel": "Varoita kanavalla",
+    "dm": "Varoita yksityisviestillä",
+    "off": "Älä varoita",
+}
+
 DEFAULTS: dict[str, any] = {
+    "image_duplicate_warning": "channel",
+    "repost_warning": "channel",
     "include_content": True,  # Näytetäänkö metadata (otsikko, kuvaus, linkki)
 }
 
@@ -101,7 +114,7 @@ ON_WORDS = {"PÄÄLLÄ", "ON", "YES", "TRUE", "KYLLÄ", "1", "KÄYTTÖÖN", "INC
 OFF_WORDS = {"POIS", "OFF", "NO", "FALSE", "EI", "0", "PIILOTA", "EXCLUDE"}
 
 
-def parse_setting_command(text: str) -> tuple[str, bool] | None:
+def parse_setting_command(text: str) -> tuple[str, bool | str] | None:
     """Tunnista asetuskomento tekstistä.
 
     Palauttaa (avain, arvo) tai None jos ei ole asetuskomento.
@@ -115,8 +128,14 @@ def parse_setting_command(text: str) -> tuple[str, bool] | None:
     if len(words) < 2:
         return None
 
-    # Ensimmäinen sana = asetusavain
     key_word = words[0]
+    if key_word in WARNING_SETTINGS:
+        mode = WARNING_MODES.get(" ".join(words[1:]))
+        if mode is not None:
+            return WARNING_SETTINGS[key_word], mode
+        return None
+
+    # Ensimmäinen sana = asetusavain
     key = SETTING_ALIASES.get(key_word)
     if key is None:
         return None
@@ -164,8 +183,9 @@ async def handle_setting_command(
             from user.tracker import register_message
             register_message(result, lifetime_seconds=10)
     else:
+        command = message.content.split()[0].upper()
         result = await message.reply(
-            f"✅ Asetus `{key}` = {value}",
+            f"✅ {command}: **{WARNING_MODE_LABELS[value]}**.",
             silent=True,
         )
         from user.tracker import register_message

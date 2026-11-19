@@ -14,6 +14,8 @@ from discord import app_commands
 import config
 from core.attachment_index import AttachmentIndex, Fingerprint, Match, RepostStats, fingerprint
 from core.logging import log
+from user.settings import get_setting
+from user.tracker import register_message
 
 HISTORY_BATCH_SIZE = 1000
 HISTORY_BATCH_SECONDS = 120
@@ -142,14 +144,24 @@ class ChannelAttachments:
                     else:
                         log.info("Liite %s: ei aiempia osumia", attachment.id)
         if exact or matches:
-            await self._warn_duplicates(message, exact, list(matches.values()))
+            repost_mode = get_setting(message.author.id, "repost_warning") if exact else None
+            image_mode = get_setting(message.author.id, "image_duplicate_warning") if matches else None
+            for mode in ("channel", "dm"):
+                if mode == repost_mode or mode == image_mode:
+                    await self._warn_duplicates(
+                        message,
+                        exact if mode == repost_mode else {},
+                        list(matches.values()) if mode == image_mode else [],
+                        private=mode == "dm",
+                    )
         if message.attachments:
             log.info("Liiteindeksi: viesti=%s valmis, lisätty=%s, puuttui=%s, osumaviestejä=%s",
                      message.id, added, unavailable, len(exact) + len(matches))
         return added, unavailable
 
     async def _warn_duplicates(
-        self, message: discord.Message, exact: dict[bytes, RepostStats], similar: list[Match]
+        self, message: discord.Message, exact: dict[bytes, RepostStats], similar: list[Match],
+        *, private: bool,
     ) -> None:
         base_url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
         heading = "⚠️ **Repostausosuma**"
@@ -185,20 +197,29 @@ class ChannelAttachments:
                 f"pHash-ero {match.bit_distance}/64 · Väriero {color_difference}/255 · "
                 f"[Aiempi osuma]({base_url}/{match.message_id})"
             )
-        log.info("Liiteindeksi: lähetetään varoitus kanavalle, viesti=%s", message.id)
+        destination = "yksityisviestinä" if private else "kanavalle"
+        target = message.author if private else message.channel
+        send_options = {}
+        if private:
+            heading += f" · [Viestisi]({message.jump_url})"
+        else:
+            send_options["reference"] = message.to_reference(fail_if_not_exists=False)
+
+        log.info("Liiteindeksi: lähetetään varoitus %s, viesti=%s", destination, message.id)
         try:
-            reference = message.to_reference(fail_if_not_exists=False)
             for offset in range(0, len(lines), 5):
-                await message.channel.send(
+                warning = await target.send(
                     "\n".join([heading, *lines[offset:offset + 5]]),
-                    reference=reference,
                     allowed_mentions=discord.AllowedMentions.none(),
                     suppress_embeds=True,
+                    **send_options,
                 )
+                if private:
+                    register_message(warning)
         except discord.HTTPException:
-            log.exception("Viestin %s duplikaattivaroituksen lähetys kanavalle epäonnistui", message.id)
+            log.exception("Viestin %s duplikaattivaroituksen lähetys %s epäonnistui", message.id, destination)
         else:
-            log.info("Liiteindeksi: duplikaattivaroitus lähetetty kanavalle, viesti=%s", message.id)
+            log.info("Liiteindeksi: duplikaattivaroitus lähetetty %s, viesti=%s", destination, message.id)
 
     async def _check(self, interaction: discord.Interaction, *, scan: bool = False) -> bool:
         if interaction.guild_id is None or interaction.channel_id not in self.channels:
