@@ -48,7 +48,7 @@ class SoundCloudBeatTests(unittest.TestCase):
             floor = Image.new("RGBA", (640, _BEAT_FLOOR_HEIGHT))
             _draw_beat_sweep(floor, (1.0,), now, (220, 150, 110))
             alpha = floor.getchannel("A")
-            positions.append([alpha.crop((0, y, 640, y + 1)).getbbox()[0] for y in (112, 200)])
+            positions.append([alpha.crop((0, y, 640, y + 1)).getbbox()[0] for y in (40, 120)])
             peaks.append(alpha.getextrema()[1])
 
         right, center, left = positions
@@ -65,3 +65,11 @@ class SoundCloudBeatTests(unittest.TestCase):
         for beats, height in (((), _WAVE_HEIGHT), ((0.5,), _BEAT_FLOOR_HEIGHT)):
             frame = next(_wave_frames(envelope, settings, beat_times=beats))
             self.assertEqual(len(frame), 640 * height * 4)
+
+    def test_no_static_grid_when_no_beats_are_visible(self):
+        envelope = (array("f", [0.1]) * 120,)
+        settings = SoundCloudVideoSettings(bands=1)
+        waveform = next(_wave_frames(envelope, settings))
+        frame = next(_wave_frames(envelope, settings, beat_times=(2.0,)))
+        self.assertEqual(frame[:len(waveform)], waveform)
+        self.assertFalse(any(frame[len(waveform):]))

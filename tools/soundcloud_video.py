@@ -37,6 +37,7 @@ _ENVELOPE_HZ = 120
 _WAVE_WIDTH = _FRAME_SIZE
 _WAVE_HEIGHT = 112
 _BEAT_FLOOR_HEIGHT = 216
+_BEAT_SWEEP_Y_OFFSET = -78  # Pixels at 640 × 640. More negative moves the sweep up.
 _NO_CONSOLE = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # Taajuuskaista, aikaikkunan leveys (s), pystysijainti, väri ja viivan leveys.
 _WAVE_BANDS = (
@@ -293,7 +294,7 @@ def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(
     edge_mask = Image.new("L", (_WAVE_WIDTH, 1))
     edge_mask.putdata(edge_alpha)
     edge_mask = edge_mask.resize(background.size)
-    floor = _beat_floor(palette[0]) if beat_times else None
+    floor = Image.new("RGBA", background.size) if beat_times else None
     frame_count = (len(envelopes[0]) * settings.fps + _ENVELOPE_HZ - 1) // _ENVELOPE_HZ
     for frame_index in range(frame_count):
         now = frame_index * _ENVELOPE_HZ / settings.fps
@@ -311,29 +312,9 @@ def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(
 def _floor_projection(depth: float) -> tuple[float, float]:
     """Return the row's y position and half-width at a projected depth."""
     horizon = _WAVE_HEIGHT - 13
-    y = horizon + depth * (_BEAT_FLOOR_HEIGHT - 1 - horizon)
+    y = horizon + depth * (_BEAT_FLOOR_HEIGHT - 1 - horizon) + _BEAT_SWEEP_Y_OFFSET
     half_width = 28 + depth * (_WAVE_WIDTH / 2 - 28)
     return y, half_width
-
-
-def _beat_floor(color: tuple[int, int, int]) -> Image.Image:
-    floor = Image.new("RGBA", (_WAVE_WIDTH, _BEAT_FLOOR_HEIGHT))
-    draw = ImageDraw.Draw(floor)
-    center = _WAVE_WIDTH / 2
-    for step in range(12):
-        start = step / 12
-        end = (step + 1) / 12
-        y1, width1 = _floor_projection(start)
-        y2, width2 = _floor_projection(end)
-        opacity = round(76 * math.sin(math.pi * (start + end) / 2))
-        for rail in range(-4, 5):
-            draw.line((center + width1 * rail / 4, y1, center + width2 * rail / 4, y2),
-                      fill=(*color, opacity))
-    for depth in (0.12, 0.27, 0.47, 0.72, 0.95):
-        y, half_width = _floor_projection(depth)
-        opacity = round(52 * math.sin(math.pi * depth))
-        draw.line((center - half_width, y, center + half_width, y), fill=(*color, opacity))
-    return floor
 
 
 def _draw_beat_sweep(
