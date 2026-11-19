@@ -1,5 +1,6 @@
 """Muodosta SoundCloud-kappaleesta kansikuvallinen MP4."""
 import asyncio
+from bisect import bisect_left, bisect_right
 import colorsys
 import io
 import math
@@ -21,6 +22,7 @@ from static_ffmpeg import run
 
 from core.logging import log
 from tools.download_progress import report
+from tools.soundcloud_beats import read_beat_grid
 from tools.soundcloud_video_settings import SoundCloudVideoSettings
 from downloaders.base import finalize
 
@@ -263,7 +265,7 @@ class _WaveStrip:
 
 
 
-def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(), palette=None):
+def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(), palette=None, beat_times=()):
     styles = _band_styles(settings)
     centers = _wave_centers(styles, settings)
     palette = palette or _wave_palette(None, len(envelopes))
@@ -289,17 +291,37 @@ def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(
     edge_mask = Image.new("L", (_WAVE_WIDTH, 1))
     edge_mask.putdata(edge_alpha)
     edge_mask = edge_mask.resize((_WAVE_WIDTH, _WAVE_HEIGHT))
+    beat_window = styles[0][1] * settings.wave_window_percent / 100
     frame_count = (len(envelopes[0]) * settings.fps + _ENVELOPE_HZ - 1) // _ENVELOPE_HZ
     for frame_index in range(frame_count):
         now = frame_index * _ENVELOPE_HZ / settings.fps
         frame = background.copy()
         for strip, center in zip(strips, centers):
             frame.alpha_composite(strip.frame(now), (0, round(center - strip.amplitude - strip.margin)))
+        if beat_times:
+            _draw_beat_line(frame, beat_times, frame_index / settings.fps, beat_window)
         frame.putalpha(ImageChops.multiply(frame.getchannel("A"), edge_mask))
         yield frame.tobytes()
 
 
-def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: int | None, settings=SoundCloudVideoSettings(), palette=None) -> None:
+def _draw_beat_line(frame: Image.Image, beat_times: tuple[float, ...], now: float, window: float) -> None:
+    pixels_per_second = (_WAVE_WIDTH - 1) / window
+    center = _WAVE_WIDTH / 2
+    half_window = center / pixels_per_second
+    first = bisect_left(beat_times, now - half_window)
+    last = bisect_right(beat_times, now + half_window)
+    draw = ImageDraw.Draw(frame)
+    y = _WAVE_HEIGHT - 7
+    draw.line((0, y, _WAVE_WIDTH - 1, y), fill=(255, 222, 170, 105))
+    for beat in beat_times[first:last]:
+        x = round(center + (beat - now) * pixels_per_second)
+        active = abs(beat - now) <= 0.055
+        draw.line((x, y - (10 if active else 5), x, y + 3),
+                  fill=(255, 222, 170, 255 if active else 200),
+                  width=3 if active else 2)
+
+
+def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: int | None, settings=SoundCloudVideoSettings(), palette=None, beat_times=()) -> None:
     with tempfile.TemporaryFile() as errors, subprocess.Popen(
         command, stdin=subprocess.PIPE, stderr=errors, creationflags=_NO_CONSOLE,
     ) as ffmpeg:
@@ -331,7 +353,7 @@ def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: 
         watchdog.start()
         try:
             with ffmpeg.stdin as frames:
-                for frame in _wave_frames(envelopes, settings, palette):
+                for frame in _wave_frames(envelopes, settings, palette, beat_times):
                     frames.write(frame)
                     last_activity = monotonic()
                     frames_written += 1
@@ -448,6 +470,16 @@ def _render_video(
     report("analysis", f"Analysoidaan {settings.bands} taajuuskaistaa…")
     envelopes = _read_envelopes(ffmpeg, audio_path, settings)
     duration = len(envelopes[0]) / _ENVELOPE_HZ
+    report("analysis", "Tunnistetaan kappaleen tempoa…")
+    try:
+        beat_grid = read_beat_grid(ffmpeg, audio_path)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        log.warning("SoundCloud-video [%s]: tempoanalyysi epäonnistui", message_id, exc_info=True)
+        beat_grid = None
+    if beat_grid:
+        log.info("SoundCloud-video [%s]: tempo %.1f BPM (%.2f BPS)",
+                 message_id, beat_grid.bpm, beat_grid.bpm / 60)
+        report("analysis", f"Tempo {beat_grid.bpm:.1f} BPM ({beat_grid.bpm / 60:.2f} BPS)")
     log.info(
         "SoundCloud-video [%s]: analyysi valmis %.1f sekunnissa, äänen kesto %.1f s",
         message_id, monotonic() - started, duration,
@@ -478,6 +510,7 @@ def _render_video(
                 "-movflags", "+faststart", str(video_path),
             ],
             envelopes, message_id, settings, _wave_palette(cover, settings.bands),
+            beat_grid.seconds if beat_grid else (),
         )
         video_size = os.path.getsize(video_path)
         if video_size > file_limit:
