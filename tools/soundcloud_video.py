@@ -25,7 +25,7 @@ from static_ffmpeg import run
 
 from core.logging import log
 from tools.download_progress import progress_enabled, report
-from tools.soundcloud_beats import estimate_beat_grid, read_beat_grid
+from tools.soundcloud_beats import estimate_beat_grid, estimate_downbeat_phase, read_beat_grid
 from tools.soundcloud_video_settings import SoundCloudVideoSettings
 from downloaders.base import finalize
 
@@ -279,7 +279,7 @@ class _WaveStrip:
 
 
 
-def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(), palette=None, beat_times=(), *, start_frame=0):
+def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(), palette=None, beat_times=(), *, start_frame=0, downbeat_phase=None):
     styles = _band_styles(settings)
     centers = _wave_centers(styles, settings)
     palette = palette or _wave_palette(None, len(envelopes))
@@ -313,7 +313,7 @@ def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(
         frame = background.copy()
         if floor is not None:
             floor_frame = floor.copy()
-            _draw_beat_sweep(floor_frame, beat_times, frame_index / settings.fps, palette[0], settings)
+            _draw_beat_sweep(floor_frame, beat_times, frame_index / settings.fps, palette[0], settings, downbeat_phase=downbeat_phase)
             frame.alpha_composite(floor_frame)
         for strip, center in zip(strips, centers):
             frame.alpha_composite(strip.frame(now), (0, round(center - strip.amplitude - strip.margin)))
@@ -323,7 +323,7 @@ def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(
 
 def _draw_beat_sweep(
     floor: Image.Image, beat_times: tuple[float, ...], now: float, color: tuple[int, int, int],
-    settings=SoundCloudVideoSettings(),
+    settings=SoundCloudVideoSettings(), *, downbeat_phase: int | None = None,
 ) -> None:
     half_travel = 0.85
     first = bisect_left(beat_times, now - half_travel)
@@ -337,7 +337,7 @@ def _draw_beat_sweep(
     highlight = tuple(round((channel + 255) / 2) for channel in color)
     for index in range(first, last):
         age = now - beat_times[index]
-        accented = settings.beat_floor_accent_every_four and index % 4 == 0
+        accented = settings.beat_floor_accent_every_four and index % 4 == downbeat_phase
         # Translate in floor space. The wider foreground moves more pixels per
         # frame than the horizon, and the line crosses center exactly on the beat.
         position = -age / half_travel
@@ -376,7 +376,7 @@ def _report_preview(frame, seconds, cover, intro, title_image, intro_seconds):
         report("preview", image=payload)
 
 
-def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: int | None, settings=SoundCloudVideoSettings(), palette=None, beat_times=(), *, preview=None) -> None:
+def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: int | None, settings=SoundCloudVideoSettings(), palette=None, beat_times=(), *, preview=None, downbeat_phase=None) -> None:
     with tempfile.TemporaryFile() as errors, subprocess.Popen(
         command, stdin=subprocess.PIPE, stderr=errors, creationflags=_NO_CONSOLE,
     ) as ffmpeg:
@@ -409,7 +409,7 @@ def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: 
         watchdog.start()
         try:
             with ffmpeg.stdin as frames:
-                for frame in _wave_frames(envelopes, settings, palette, beat_times):
+                for frame in _wave_frames(envelopes, settings, palette, beat_times, downbeat_phase=downbeat_phase):
                     frames.write(frame)
                     last_activity = monotonic()
                     frames_written += 1
@@ -554,6 +554,7 @@ def _render_video(
         message_id, monotonic() - started, duration,
     )
     beat_times = beat_grid.seconds if beat_grid else ()
+    downbeat_phase = estimate_downbeat_phase(envelopes[0], beat_times)
     overlay_height = _BEAT_FLOOR_HEIGHT if beat_times and settings.beat_floor_enabled else _WAVE_HEIGHT
     with tempfile.TemporaryDirectory(prefix="soundcloud_video_") as directory:
         cover_path = Path(directory) / "cover.png"
@@ -584,7 +585,7 @@ def _render_video(
                 "-movflags", "+faststart", str(video_path),
             ],
             envelopes, message_id, settings, _wave_palette(cover, settings.bands),
-            beat_times, preview=preview if progress_enabled() else None,
+            beat_times, preview=preview if progress_enabled() else None, downbeat_phase=downbeat_phase,
         )
         video_size = os.path.getsize(video_path)
         if video_size > file_limit:
@@ -612,6 +613,7 @@ def _render_video(
                     archive.write(title_path, "title.png")
                     archive.writestr("settings.json", settings.to_json())
                     archive.writestr("beats.json", json.dumps(beat_times))
+                    archive.writestr("downbeat.json", json.dumps(downbeat_phase))
                     for index, envelope in enumerate(envelopes):
                         archive.writestr(f"band-{index}.bin", envelope.tobytes())
             except OSError:

@@ -8,6 +8,7 @@ from zipfile import ZipFile
 
 from PIL import Image
 
+from tools.soundcloud_beats import estimate_downbeat_phase
 from tools.soundcloud_video import (
     _compose_preview, _ENVELOPE_HZ, _FRAME_SIZE, _wave_frames, _wave_palette,
 )
@@ -22,6 +23,7 @@ class SoundCloudPreviewSource:
     cover: Image.Image
     intro: Image.Image
     title: Image.Image
+    downbeat_phase: int | None = None
 
     @classmethod
     def from_archive(cls, path):
@@ -39,7 +41,11 @@ class SoundCloudPreviewSource:
                 envelopes.append(band)
             if not envelopes[0] or any(len(band) != len(envelopes[0]) for band in envelopes):
                 raise ValueError("Esikatselun taajuuskaistat ovat virheellisiä.")
-        return cls(settings, tuple(envelopes), beats, *images)
+            try:
+                phase = json.loads(archive.read("downbeat.json"))
+            except KeyError:
+                phase = estimate_downbeat_phase(envelopes[0], beats)
+        return cls(settings, tuple(envelopes), beats, *images, downbeat_phase=phase)
 
     @classmethod
     def example(cls, settings=SoundCloudVideoSettings(intro_seconds=0)):
@@ -51,7 +57,7 @@ class SoundCloudPreviewSource:
                                     for i in range(settings.bands))
         )
         cover = Image.new("RGB", (_FRAME_SIZE, _FRAME_SIZE), "#252130")
-        return cls(settings, envelopes, beats, cover, cover, Image.new("RGBA", (1, 1)))
+        return cls(settings, envelopes, beats, cover, cover, Image.new("RGBA", (1, 1)), downbeat_phase=0)
 
     @property
     def duration(self):
@@ -62,6 +68,7 @@ class SoundCloudPreviewSource:
         last_frame = (len(self.envelopes[0]) * settings.fps - 1) // _ENVELOPE_HZ
         index = min(last_frame, max(0, round(seconds * settings.fps)))
         palette = _wave_palette(self.cover, settings.bands)
-        frame = next(_wave_frames(self.envelopes, settings, palette, self.beats, start_frame=index))
+        frame = next(_wave_frames(self.envelopes, settings, palette, self.beats, start_frame=index,
+                                  downbeat_phase=self.downbeat_phase))
         return _compose_preview(frame, index / settings.fps, self.cover, self.intro, self.title,
                                 settings.intro_seconds)

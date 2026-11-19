@@ -73,7 +73,7 @@ class SoundCloudSettingsDialog(QDialog):
         enabled = QCheckBox("Näytä iskulinjat")
         self.controls["beat_floor_enabled"] = enabled
         floor_form.addRow(enabled)
-        accent = QCheckBox("Korosta joka neljäs isku")
+        accent = QCheckBox("Korosta tunnistetut tahdin alut")
         self.controls["beat_floor_accent_every_four"] = accent
         floor_form.addRow(accent)
         for name, label, low, high, suffix in (

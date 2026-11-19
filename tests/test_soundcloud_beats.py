@@ -9,7 +9,7 @@ from shutil import which
 from PIL import Image, ImageChops
 
 from tools.soundcloud_preview_source import SoundCloudPreviewSource
-from tools.soundcloud_beats import estimate_beat_grid, read_beat_grid
+from tools.soundcloud_beats import estimate_beat_grid, estimate_downbeat_phase, read_beat_grid
 from tools.soundcloud_video import _BEAT_FLOOR_HEIGHT, _WAVE_HEIGHT, _draw_beat_sweep, _wave_frames
 from tools.soundcloud_video_settings import SoundCloudVideoSettings
 
@@ -115,14 +115,14 @@ class SoundCloudBeatTests(unittest.TestCase):
 
     def test_every_fourth_beat_is_thicker_even_after_seeking(self):
         beats = tuple(0.5 * index for index in range(12))
-        for index in (0, 1, 4, 8, 9):
+        for index in (0, 1, 4, 5, 8, 9):
             widths = []
             for accent in (False, True):
                 floor = Image.new("RGBA", (640, _BEAT_FLOOR_HEIGHT))
                 settings = SoundCloudVideoSettings(beat_floor_accent_every_four=accent)
-                _draw_beat_sweep(floor, beats, beats[index], (220, 150, 110), settings)
+                _draw_beat_sweep(floor, beats, beats[index], (220, 150, 110), settings, downbeat_phase=1)
                 widths.append(sum(floor.getpixel((x, 85))[3] > 0 for x in range(308, 332)))
-            self.assertEqual(widths[1] - widths[0], 3 if index % 4 == 0 else 0)
+            self.assertEqual(widths[1] - widths[0], 3 if index % 4 == 1 else 0)
 
     def test_preview_applies_wave_settings_at_selected_timestamp(self):
         source = SoundCloudPreviewSource.example()
@@ -135,3 +135,17 @@ class SoundCloudBeatTests(unittest.TestCase):
         difference = ImageChops.difference(before, after)
         self.assertIsNotNone(difference.getbbox())
         self.assertIsNone(difference.crop((0, 0, 640, 380)).getbbox())
+
+    def test_downbeat_requires_consistent_four_beat_accent(self):
+        beats = tuple(i * 0.5 for i in range(48))
+        for mode, expected in (("four", 2), ("two", None), ("flat", None), ("changes", None)):
+            envelope = array("f", [0.0]) * (48 * 60)
+            for index, beat in enumerate(beats):
+                marked = (
+                    (mode == "four" and index % 4 == 2)
+                    or (mode == "two" and index % 2 == 0)
+                    or (mode == "changes" and index % 4 == index // 24)
+                )
+                envelope[round(beat * 120) + 1] = 0.7 if marked else 0.25
+            with self.subTest(mode=mode):
+                self.assertEqual(estimate_downbeat_phase(envelope, beats), expected)

@@ -107,3 +107,34 @@ def estimate_beat_grid(envelope: array, *, relaxed: bool = False) -> BeatGrid | 
         for index in range(math.ceil((len(envelope) - phase) / period))
     )
     return BeatGrid(60 * rate / period, beats)
+
+
+def estimate_downbeat_phase(envelope: array, beats: tuple[float, ...]) -> int | None:
+    """Find a strongly repeated four-beat accent in the low-frequency attacks."""
+    bar_count = len(beats) // 4
+    if bar_count < 9:
+        return None
+
+    attacks = []
+    for beat in beats[:bar_count * 4]:
+        center = round(beat * _SAMPLE_RATE)
+        first = max(4, center - 7)
+        end = min(len(envelope), center + 10)
+        attacks.append(max((envelope[i] - envelope[i - 4] for i in range(first, end)), default=0))
+
+    votes = []
+    for start in range(0, len(attacks), 4):
+        bar = attacks[start:start + 4]
+        strongest = max(range(4), key=bar.__getitem__)
+        winner, runner_up = sorted(bar, reverse=True)[:2]
+        # Equal kicks (including two-beat patterns) provide no bar-start evidence.
+        votes.append(strongest if winner >= 0.004 and winner > 1.35 * runner_up else None)
+
+    phase = max(range(4), key=votes.count)
+    # Require agreement throughout the track so a single loud section cannot
+    # determine the bar phase for the entire video.
+    for section in range(3):
+        chunk = votes[section * bar_count // 3:(section + 1) * bar_count // 3]
+        if chunk.count(phase) * 4 < len(chunk) * 3:
+            return None
+    return phase
