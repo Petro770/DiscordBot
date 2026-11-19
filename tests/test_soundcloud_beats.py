@@ -123,3 +123,15 @@ class SoundCloudBeatTests(unittest.TestCase):
                 _draw_beat_sweep(floor, beats, beats[index], (220, 150, 110), settings)
                 widths.append(sum(floor.getpixel((x, 85))[3] > 0 for x in range(308, 332)))
             self.assertEqual(widths[1] - widths[0], 3 if index % 4 == 0 else 0)
+
+    def test_preview_applies_wave_settings_at_selected_timestamp(self):
+        source = SoundCloudPreviewSource.example()
+        overrides = {"beat_floor_enabled": False}
+        before = source.frame(1.0, overrides)
+        after = source.frame(1.0, {
+            **overrides, "wave_line_width": 8, "wave_amplitude": 44,
+            "wave_window_percent": 160, "wave_background": True, "wave_opacity": 220,
+        })
+        difference = ImageChops.difference(before, after)
+        self.assertIsNotNone(difference.getbbox())
+        self.assertIsNone(difference.crop((0, 0, 640, 380)).getbbox())

@@ -42,13 +42,13 @@ class SoundCloudPreviewSource:
         return cls(settings, tuple(envelopes), beats, *images)
 
     @classmethod
-    def example(cls):
-        settings = SoundCloudVideoSettings(intro_seconds=0)
+    def example(cls, settings=SoundCloudVideoSettings(intro_seconds=0)):
         beats = tuple(index / 2 for index in range(16))
         envelopes = tuple(
             array("f", (0.04 + 0.62 * exp(-falloff * ((i + offset) % 60) / 60)
                         for i in range(8 * _ENVELOPE_HZ)))
-            for falloff, offset in ((13, 0), (7, 42), (17, 30))
+            for falloff, offset in (((13, 0), (7, 42), (17, 30))[i % 3]
+                                    for i in range(settings.bands))
         )
         cover = Image.new("RGB", (_FRAME_SIZE, _FRAME_SIZE), "#252130")
         return cls(settings, envelopes, beats, cover, cover, Image.new("RGBA", (1, 1)))
@@ -57,8 +57,8 @@ class SoundCloudPreviewSource:
     def duration(self):
         return len(self.envelopes[0]) / _ENVELOPE_HZ
 
-    def frame(self, seconds, floor_settings):
-        settings = replace(self.settings, **floor_settings)
+    def frame(self, seconds, overrides):
+        settings = replace(self.settings, **overrides)
         last_frame = (len(self.envelopes[0]) * settings.fps - 1) // _ENVELOPE_HZ
         index = min(last_frame, max(0, round(seconds * settings.fps)))
         palette = _wave_palette(self.cover, settings.bands)

@@ -147,7 +147,7 @@ def _wave_alpha(level: float, peak: float) -> int:
     return min(255, round(1.30 * (28 + 207 * strength ** 0.50)))
 
 
-def _read_envelopes(ffmpeg: str, audio_path: str, settings=SoundCloudVideoSettings()) -> tuple[array, ...]:
+def _envelope_arguments(audio_path: str, settings):
     count = settings.bands
     filters = [f"[0:a]aformat=channel_layouts=mono,asplit={count}" + "".join(f"[b{i}]" for i in range(count))]
     for index, (band_filter, *_style) in enumerate(_band_styles(settings)):
@@ -161,19 +161,27 @@ def _read_envelopes(ffmpeg: str, audio_path: str, settings=SoundCloudVideoSettin
         "".join(f"[e{i}]" for i in range(count))
         + f"concat=n={count}:v=0:a=1[envelopes]"
     )
-    result = subprocess.run(
-        [ffmpeg, "-nostdin", "-loglevel", "error", "-i", audio_path,
-         "-filter_complex", ";".join(filters), "-map", "[envelopes]", "-f", "f32le", "pipe:1"],
-        check=True, capture_output=True, timeout=120, creationflags=_NO_CONSOLE,
-    )
+    return ["-nostdin", "-loglevel", "error", "-i", audio_path,
+            "-filter_complex", ";".join(filters), "-map", "[envelopes]", "-f", "f32le", "pipe:1"]
+
+
+def _decode_envelopes(data: bytes, count: int) -> tuple[array, ...]:
     samples = array("f")
-    samples.frombytes(result.stdout)
+    samples.frombytes(data)
     if sys.byteorder != "little":
         samples.byteswap()
     if len(samples) % count:
         raise ValueError("Taajuuskaistojen analyysi tuotti eripituiset kaistat.")
     band_length = len(samples) // count
     return tuple(samples[index * band_length:(index + 1) * band_length] for index in range(count))
+
+
+def _read_envelopes(ffmpeg: str, audio_path: str, settings=SoundCloudVideoSettings()) -> tuple[array, ...]:
+    result = subprocess.run(
+        [ffmpeg, *_envelope_arguments(audio_path, settings)],
+        check=True, capture_output=True, timeout=120, creationflags=_NO_CONSOLE,
+    )
+    return _decode_envelopes(result.stdout, settings.bands)
 
 
 def _envelope_at(band: array, position: float) -> float:

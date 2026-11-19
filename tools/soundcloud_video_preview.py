@@ -1,4 +1,5 @@
 """Frame-by-frame preview of the last completed SoundCloud video."""
+from dataclasses import replace
 from io import BytesIO
 import math
 from pathlib import Path
@@ -9,6 +10,7 @@ from PyQt5.QtGui import QPixmap
 from PyQt5.QtWidgets import QComboBox, QLabel, QSlider, QVBoxLayout, QWidget
 
 from tools.soundcloud_preview_source import SoundCloudPreviewSource
+from tools.soundcloud_video import _decode_envelopes, _envelope_arguments
 
 
 class SoundCloudVideoPreview(QWidget):
@@ -40,7 +42,14 @@ class SoundCloudVideoPreview(QWidget):
         self.timer.timeout.connect(self._read_frame)
         self.slider.valueChanged.connect(self._seek)
         self.requested_ms = None
-        self.floor_settings = {}
+        self.render_settings = {}
+        self.analysis = QProcess(self)
+        self.analysis.finished.connect(self._analysis_finished)
+        self.analysis.errorOccurred.connect(self._analysis_error)
+        self.analysis_key = None
+        self.analyzed = None
+        self.failed_key = None
+        self.previous = None
         self.source = None
         self.sources = []
         self._add_previous(settings)
@@ -71,6 +80,7 @@ class SoundCloudVideoPreview(QWidget):
             pass
         if source is not None:
             duration, fps = source.duration, source.settings.fps
+        self.previous = source
         self.sources.append((source, duration, fps))
         self.source_menu.addItem("Edellinen video" if source is not None else "Edellinen video · valmis MP4")
 
@@ -85,8 +95,8 @@ class SoundCloudVideoPreview(QWidget):
         self.slider.setValue(0 if self.source is None else min(1000, self.slider.maximum()))
         self._seek(self.slider.value())
 
-    def set_floor_settings(self, settings):
-        self.floor_settings = settings
+    def set_render_settings(self, settings):
+        self.render_settings = settings
         if self.source is not None:
             self.timer.start()
 
@@ -102,7 +112,15 @@ class SoundCloudVideoPreview(QWidget):
 
     def _read_frame(self):
         if self.source is not None:
-            image = self.source.frame(self.slider.value() / 1000, self.floor_settings)
+            try:
+                settings = replace(self.source.settings, **self.render_settings)
+            except ValueError as error:
+                self.image.setText(str(error))
+                return
+            source = self._wave_source(settings)
+            if source is None:
+                return
+            image = source.frame(self.slider.value() / 1000, self.render_settings)
             image.thumbnail((260, 260))
             output = BytesIO()
             image.save(output, format="PNG")
@@ -118,6 +136,49 @@ class SoundCloudVideoPreview(QWidget):
             "-i", self.path, "-map", "0:v:0", "-frames:v", "1", "-vf", "scale=260:260",
             "-f", "image2pipe", "-c:v", "mjpeg", "-threads", "1", "pipe:1",
         ])
+
+    @staticmethod
+    def _wave_key(settings):
+        return settings.bands, min(15, settings.fps * 0.3)
+
+    def _wave_source(self, settings):
+        if self.source is not self.previous:
+            if self.source.settings.bands == settings.bands:
+                return self.source
+            return SoundCloudPreviewSource.example(settings)
+
+        key = self._wave_key(settings)
+        if key == self._wave_key(self.source.settings):
+            return self.source
+        if self.analyzed is not None and self.analyzed[0] == key:
+            return replace(self.source, envelopes=self.analyzed[1])
+        if self.failed_key == key:
+            self.image.setText("Aaltomuodon analyysi epäonnistui.")
+            return None
+        if self.analysis.state() == QProcess.NotRunning:
+            self.analysis_key = key
+            self.image.setText("Analysoidaan videon ääntä…")
+            self.analysis.start(self.ffmpeg, _envelope_arguments(self.path, settings))
+        return None
+
+    def _analysis_finished(self, exit_code, exit_status):
+        data = bytes(self.analysis.readAllStandardOutput())
+        self.analysis.readAllStandardError()
+        key, self.analysis_key = self.analysis_key, None
+        if key is None:
+            return
+        try:
+            if exit_code != 0 or exit_status != QProcess.NormalExit or not data:
+                raise ValueError("Aaltomuodon analyysi epäonnistui.")
+            self.analyzed = key, _decode_envelopes(data, key[0])
+        except ValueError:
+            self.failed_key = key
+        self.timer.start()
+
+    def _analysis_error(self, error):
+        if error == QProcess.FailedToStart:
+            self.failed_key, self.analysis_key = self.analysis_key, None
+            self.timer.start()
 
     def _finished(self, exit_code, exit_status):
         data = bytes(self.process.readAllStandardOutput())
@@ -140,6 +201,8 @@ class SoundCloudVideoPreview(QWidget):
     def stop(self):
         self.timer.stop()
         self.requested_ms = None
-        if self.process.state() != QProcess.NotRunning:
-            self.process.kill()
-            self.process.waitForFinished(500)
+        self.analysis_key = None
+        for process in (self.process, self.analysis):
+            if process.state() != QProcess.NotRunning:
+                process.kill()
+                process.waitForFinished(500)

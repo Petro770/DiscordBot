@@ -97,17 +97,19 @@ class SoundCloudSettingsDialog(QDialog):
         preview_column.addWidget(floor_group)
         columns.addLayout(preview_column)
 
-        def update_floor():
-            preview.set_floor_settings({
-                name: control.isChecked() if isinstance(control, QCheckBox) else control.value()
-                for name, control in self.controls.items() if name.startswith("beat_floor_")
+        def update_preview():
+            values = self.control_values()
+            preview.set_render_settings({
+                name: value for name, value in values.items()
+                if name.startswith(("wave_", "beat_floor_"))
+                or name in ("bands", "fps", "resolution", "intro_seconds")
             })
 
-        enabled.toggled.connect(update_floor)
-        accent.toggled.connect(update_floor)
-        for name, control in self.controls.items():
-            if name.startswith("beat_floor_") and isinstance(control, QSpinBox):
-                control.valueChanged.connect(update_floor)
+        for control in self.controls.values():
+            if isinstance(control, QCheckBox):
+                control.toggled.connect(update_preview)
+            elif isinstance(control, QSpinBox):
+                control.valueChanged.connect(update_preview)
         layout.addLayout(columns)
         self.finished.connect(preview.stop)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults)
@@ -123,7 +125,7 @@ class SoundCloudSettingsDialog(QDialog):
         except (ValueError, TypeError):
             current = SoundCloudVideoSettings()
         self.populate(current)
-        update_floor()
+        update_preview()
 
     def populate(self, values):
         for name, value in asdict(values).items():
@@ -137,14 +139,17 @@ class SoundCloudSettingsDialog(QDialog):
 
         self.controls["wave_opacity"].setEnabled(self.controls["wave_background"].isChecked())
 
-    def save(self):
+    def control_values(self):
         values = {}
         for name, control in self.controls.items():
             values[name] = (control.isChecked() if isinstance(control, QCheckBox)
                             else control.currentText() if isinstance(control, QComboBox)
                             else control.value())
+        return values
+
+    def save(self):
         try:
-            result = SoundCloudVideoSettings(**values)
+            result = SoundCloudVideoSettings(**self.control_values())
         except ValueError as error:
             QMessageBox.warning(self, "Tarkista asetukset", str(error))
             return
