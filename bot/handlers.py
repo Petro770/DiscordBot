@@ -18,6 +18,7 @@ from config import (
 from printer.queue import PrintQueue
 from core.logging import log
 from core.queue import get_task_queue
+from scrapers.aliexpress import fetch_product_metadata, product_url as aliexpress_product_url
 
 from user.settings import should_include_content
 
@@ -680,6 +681,32 @@ async def handle_soundcloud(
 # URL-ROUTING (yhteinen)
 # ============================================================
 
+async def handle_aliexpress(
+    message: discord.Message,
+    url: str,
+    delete_original: bool = False,
+    forward_channel_id: int | None = None,
+) -> None:
+    fields = await fetch_product_metadata(await get_session(), url)
+    title = fields.get("og:title")
+    image = fields.get("og:image", "")
+    amount = fields.get("product:price:amount") or fields.get("price", "")
+    currency = fields.get("product:price:currency") or fields.get("pricecurrency", "")
+    sender = Send(message, delete_original, forward_channel_id=forward_channel_id)
+    embed = None
+    if title:
+        embed = discord.Embed(title=title[:256], url=url)
+        if image.startswith("//"):
+            image = f"https:{image}"
+        if image.startswith("https://") and len(image) <= 2048:
+            embed.set_thumbnail(url=image)
+        if re.fullmatch(r"[0-9]+(?:[.,][0-9]+)?", amount) and len(amount) <= 20:
+            if re.fullmatch(r"[A-Z]{3}", currency):
+                embed.add_field(name="Sivulla näkyvä hinta", value=f"{amount} {currency}")
+    if await sender.send(f"🛒 AliExpress · <{url}>", embed=embed):
+        await sender.delete_original()
+
+
 async def route_message(message: discord.Message, names: list[str]):
     """Yhteinen reititys: linkit → videot, kuvat → tulostus, muu → kuittaus."""
     from downloaders.youtube import is_youtube
@@ -748,6 +775,7 @@ async def route_message(message: discord.Message, names: list[str]):
             relevant_urls.extend(u for u in urls if is_twitch(u))
         if config.ENABLE_SOUNDCLOUD:
             relevant_urls.extend(u for u in urls if is_soundcloud(u))
+        relevant_urls.extend(product for url in urls if (product := aliexpress_product_url(url)))
 
         if relevant_urls:
             # DM: käsittele aina suoraan
@@ -774,6 +802,8 @@ async def route_message(message: discord.Message, names: list[str]):
                     await handle_twitch(message, url, delete_original=delete_original, forward_channel_id=fwd)
                 elif is_soundcloud(url):
                     await handle_soundcloud(message, url, delete_original=delete_original, forward_channel_id=fwd)
+                elif aliexpress_product_url(url):
+                    await handle_aliexpress(message, url, delete_original=delete_original, forward_channel_id=fwd)
             else:
                 # Kanava, ei mentionia → reaktiokysely
                 await _start_pending_url(message, relevant_urls[0], names, delete_original=delete_original)
@@ -892,7 +922,7 @@ class Send:
             user_id=self.user.id,
         )
 
-    async def send(self, content, file=None, silent=True, delete_after=None):
+    async def send(self, content, file=None, silent=True, delete_after=None, *, embed=None):
         """Lopullinen viesti – korkeampi prioriteetti, siivoa tilaviestin ensin."""
 
         async def _do():
@@ -900,9 +930,9 @@ class Send:
             if file is not None and hasattr(file, "fp"):
                 fp = getattr(getattr(file, "fp", None), "name", None)
                 self._file_path = fp if isinstance(fp, str) else None
-            result_msg = await self._do_send(content, file=file, silent=silent, delete_after=delete_after)
+            result_msg = await self._do_send(content, file=file, silent=silent, delete_after=delete_after, embed=embed)
             if self.forward_channel_id and result_msg is not None:
-                await self._forward_to_channel(content, file)
+                await self._forward_to_channel(content, file, embed=embed)
             return result_msg
 
         # Prioriteetti 1 = korkea (lopullinen viesti etenee ennen tilaviestejä)
@@ -914,7 +944,7 @@ class Send:
         )
         return result
 
-    async def _forward_to_channel(self, content: str, file) -> None:
+    async def _forward_to_channel(self, content: str, file, *, embed=None) -> None:
         """Lähetä viesti myös julkiselle kanavalle."""
         if _bot is None:
             return
@@ -928,14 +958,17 @@ class Send:
                 new_file = discord.File(self._file_path, filename=file.filename)
                 await target.send(f"{mention} {content}", file=new_file)
             else:
-                await target.send(f"{mention} {content}")
+                kwargs = {"embed": embed} if embed is not None else {}
+                await target.send(f"{mention} {content}", **kwargs)
 
             log.info("Forward kanavalle onnistui.")
         except Exception as e:
             log.warning("Forward kanavalle epäonnistui: %s", e)
 
-    async def _do_send(self, content: str, file=None, silent=True, delete_after=None) -> discord.Message:
+    async def _do_send(self, content: str, file=None, silent=True, delete_after=None, *, embed=None) -> discord.Message:
         kwargs = {}
+        if embed is not None:
+            kwargs["embed"] = embed
         if delete_after is not None:
             kwargs["delete_after"] = delete_after
 
@@ -1071,6 +1104,8 @@ async def _trigger_url(pending: PendingURL, message: discord.Message, *, audio_o
             await handle_twitch(message, url, delete_original=del_orig)
         elif is_soundcloud(url):
             await handle_soundcloud(message, url, delete_original=del_orig, audio_only=audio_only)
+        elif aliexpress_product_url(url):
+            await handle_aliexpress(message, url, delete_original=del_orig)
         else:
             await message.reply("⚠️ Tuntuma URL ei ole tunnistettu.", delete_after=REPLY_DELETE_AFTER)
     except Exception as e:

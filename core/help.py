@@ -59,6 +59,9 @@ HELP_GENERAL = """👽 **Bogos Binted – Ohje**
 **Videot & kuvat:**
 Lähetä linkki (YouTube, Instagram, X, TikTok, Twitch, SoundCloud) tai kuva → bot lataa ja lähettää tiedoston.
 
+**AliExpress:**
+Lähetä tuotelinkki → botti palauttaa siistin linkin ja saatavilla olevat tuotetiedot.
+
 **Komennot:**
 • `POISTA` – poista alkuperäinen viesti käsittelyn jälkeen
 • `JAA` – lähetä tulos myös kanavalle (DM:stä)
