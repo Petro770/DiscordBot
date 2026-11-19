@@ -76,8 +76,8 @@ class SoundCloudSettingsDialog(QDialog):
         for name, label, low, high, suffix in (
             ("beat_floor_x_offset", "Vaakasiirto", -160, 160, " px"),
             ("beat_floor_y_offset", "Pystysiirto", -105, 20, " px"),
-            ("beat_floor_depth_percent", "Syvyys", 20, 130, " %"),
-            ("beat_floor_far_width_percent", "Horisontin leveys", 10, 300, " %"),
+            ("beat_floor_height", "Iskulinjojen korkeus", 12, 256, " px"),
+            ("beat_floor_far_width_percent", "Horisontin leveys", 10, 1000, " %"),
             ("beat_floor_near_width_percent", "Etualan leveys", 25, 150, " %"),
         ):
             control = QSpinBox()
@@ -85,6 +85,12 @@ class SoundCloudSettingsDialog(QDialog):
             control.setSuffix(suffix)
             self.controls[name] = control
             floor_form.addRow(label, control)
+        self.controls["beat_floor_height"].setToolTip(
+            "Horisontin ja etureunan välinen pystyetäisyys 640 × 640 -peruskoossa."
+        )
+        self.controls["beat_floor_y_offset"].setToolTip(
+            "Siirtää horisonttia ja etureunaa yhdessä. Negatiivisempi arvo nostaa iskulinjoja."
+        )
         preview_column.addWidget(floor_group)
         columns.addLayout(preview_column)
 

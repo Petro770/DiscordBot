@@ -323,7 +323,7 @@ def _draw_beat_sweep(
     draw = ImageDraw.Draw(floor)
     center = _WAVE_WIDTH / 2 + settings.beat_floor_x_offset
     horizon_y = 108.28 + settings.beat_floor_y_offset
-    foreground_y = horizon_y + 100.92 * settings.beat_floor_depth_percent / 100
+    foreground_y = horizon_y + settings.beat_floor_height
     horizon_width = 51.36 * settings.beat_floor_far_width_percent / 100
     foreground_width = 305.4 * settings.beat_floor_near_width_percent / 100
     highlight = tuple(round((channel + 255) / 2) for channel in color)

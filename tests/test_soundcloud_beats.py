@@ -81,8 +81,32 @@ class SoundCloudBeatTests(unittest.TestCase):
         adjusted = source.frame(1.0, {
             "beat_floor_x_offset": 40,
             "beat_floor_y_offset": -95,
-            "beat_floor_depth_percent": 75,
+            "beat_floor_height": 75,
         })
         without_floor = source.frame(1.0, {"beat_floor_enabled": False})
         self.assertIsNotNone(ImageChops.difference(original, adjusted).getbbox())
         self.assertIsNotNone(ImageChops.difference(original, without_floor).getbbox())
+
+    def test_wide_horizon_and_height_change_the_projected_endpoints(self):
+        near_edge = []
+        horizon_x = []
+        for width, height in ((300, 101), (560, 155)):
+            settings = SoundCloudVideoSettings(
+                beat_floor_far_width_percent=width, beat_floor_height=height,
+            )
+            floor = Image.new("RGBA", (640, _BEAT_FLOOR_HEIGHT))
+            _draw_beat_sweep(floor, (1.0,), 0.5, (220, 150, 110), settings)
+            box = floor.getchannel("A").getbbox()
+            self.assertEqual(box[1], 30)
+            horizon_x.append(floor.getchannel("A").crop((0, 30, 640, 31)).getbbox()[0])
+            near_edge.append(box[3])
+            self.assertEqual(SoundCloudVideoSettings.from_json(settings.to_json()), settings)
+        self.assertGreater(horizon_x[1], horizon_x[0])
+        self.assertAlmostEqual(near_edge[1] - near_edge[0], 54, delta=1)
+
+    def test_saved_depth_percentage_migrates_to_height(self):
+        settings = SoundCloudVideoSettings.from_json(
+            '{"beat_floor_depth_percent": 130, "beat_floor_far_width_percent": 300}'
+        )
+        self.assertEqual(settings.beat_floor_height, 131)
+        self.assertEqual(settings.beat_floor_far_width_percent, 300)
