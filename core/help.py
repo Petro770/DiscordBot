@@ -103,6 +103,7 @@ HELP_SETTINGS = """⚙️ **Käyttäjäasetukset**
 • `REPOSTAUSVAROITUS KANAVA` / `DM` / `POIS` – täsmälliset liitekopiot
 
 Molempien oletus on `KANAVA`. `DM` lähettää varoituksen yksityisviestinä ja `POIS` kytkee sen pois.
+Jos varoitustavalle ei ole omaa asetusta, voit valita sen myös kanavavaroituksen painikkeista.
 Voit muuttaa omia asetuksiasi botin yksityisviestissä tai sen kohdekanavalla.
 Sisältöasetuksen ohje löytyy komennolla `OHJE SISÄLTÖ`."""
 

@@ -75,7 +75,11 @@ liitekopioille botin yksityisviestissä tai sen kohdekanavalla.
 `KANAVA` on oletus, `DM` lähettää varoituksen yksityisviestinä ja `POIS` kytkee
 varoituksen pois. Asetukset tallentuvat käyttäjäkohtaisesti. Jos yksityisviestin
 lähetys epäonnistuu, julkista varoitusta ei lähetetä. Liitteet indeksoidaan
-kaikilla asetuksilla. Discordissa ohjeen saa komennolla `OHJE ASETUKSET`.
+kaikilla asetuksilla. Jos varoitustavalle ei ole vielä tallennettua valintaa,
+kanavavaroituksessa näkyvät valintapainikkeet. Vain varoituksen saanut käyttäjä
+voi valita seuraavien varoitusten tavan. Painikkeet ovat käytössä 10 minuuttia,
+ja valinta näkyy uudelleen seuraavassa varoituksessa, jos asetusta ei tallennettu.
+Discordissa ohjeen saa komennolla `OHJE ASETUKSET`.
 
 Varoitus näyttää
 samankaltaisuuspisteet. Mahdolliselle kuvakopiolle näytetään myös pHash-etäisyys

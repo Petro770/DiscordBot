@@ -14,7 +14,7 @@ from discord import app_commands
 import config
 from core.attachment_index import AttachmentIndex, Fingerprint, Match, RepostStats, fingerprint
 from core.logging import log
-from user.settings import get_setting
+from user.settings import DEFAULTS, WARNING_MODE_LABELS, get_user_entry, set_setting
 from user.tracker import register_message
 
 HISTORY_BATCH_SIZE = 1000
@@ -29,6 +29,64 @@ class ScanContinuation(discord.ui.View):
     @discord.ui.button(label="Jatka indeksointia", style=discord.ButtonStyle.primary)
     async def continue_scan(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
         await self.attachments._scan(interaction, continuation=self)
+
+
+WARNING_TYPES = {
+    "repost_warning": "Repostaus",
+    "image_duplicate_warning": "Kuvakopio",
+}
+
+
+class WarningPreferenceButton(discord.ui.Button):
+    def __init__(self, user_id: int, key: str, mode: str, row: int):
+        label = {"channel": "Kanava", "dm": "DM", "off": "Pois"}[mode]
+        super().__init__(label=f"{WARNING_TYPES[key]} · {label}", row=row)
+        self.user_id = user_id
+        self.key = key
+        self.mode = mode
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.user_id:
+            await interaction.response.send_message(
+                "Vain varoituksen saanut käyttäjä voi valita asetuksen.", ephemeral=True
+            )
+            return
+
+        settings = get_user_entry(self.user_id).get("settings", {})
+        if self.key in settings:
+            await interaction.response.send_message(
+                "Olet jo valinnut asetuksen. Muutosohje löytyy komennolla `OHJE ASETUKSET`.",
+                ephemeral=True,
+            )
+            return
+
+        set_setting(self.user_id, self.key, self.mode)
+        if get_user_entry(self.user_id).get("settings", {}).get(self.key) != self.mode:
+            await interaction.response.send_message(
+                "Asetuksen tallennus epäonnistui. Kokeile uudelleen.", ephemeral=True
+            )
+            return
+
+        await interaction.response.send_message(
+            f"✅ {WARNING_TYPES[self.key]} · **{WARNING_MODE_LABELS[self.mode]}**",
+            ephemeral=True,
+        )
+
+
+class WarningPreferences(discord.ui.View):
+    def __init__(self, user_id: int, keys: list[str]):
+        super().__init__(timeout=600)
+        self.message: discord.Message | None = None
+        for row, key in enumerate(keys):
+            for mode in WARNING_MODE_LABELS:
+                self.add_item(WarningPreferenceButton(user_id, key, mode, row))
+
+    async def on_timeout(self) -> None:
+        if self.message is not None:
+            try:
+                await self.message.edit(view=None)
+            except discord.HTTPException:
+                log.debug("Varoituksen %s asetusvalintaa ei voitu poistaa", self.message.id)
 
 
 class ChannelAttachments:
@@ -144,8 +202,15 @@ class ChannelAttachments:
                     else:
                         log.info("Liite %s: ei aiempia osumia", attachment.id)
         if exact or matches:
-            repost_mode = get_setting(message.author.id, "repost_warning") if exact else None
-            image_mode = get_setting(message.author.id, "image_duplicate_warning") if matches else None
+            settings = get_user_entry(message.author.id).get("settings", {})
+            warning_keys = []
+            if exact:
+                warning_keys.append("repost_warning")
+            if matches:
+                warning_keys.append("image_duplicate_warning")
+            modes = {key: settings.get(key, DEFAULTS[key]) for key in warning_keys}
+            repost_mode = modes.get("repost_warning")
+            image_mode = modes.get("image_duplicate_warning")
             for mode in ("channel", "dm"):
                 if mode == repost_mode or mode == image_mode:
                     await self._warn_duplicates(
@@ -153,6 +218,7 @@ class ChannelAttachments:
                         exact if mode == repost_mode else {},
                         list(matches.values()) if mode == image_mode else [],
                         private=mode == "dm",
+                        unset_keys=[key for key in warning_keys if key not in settings] if mode == "channel" else [],
                     )
         if message.attachments:
             log.info("Liiteindeksi: viesti=%s valmis, lisätty=%s, puuttui=%s, osumaviestejä=%s",
@@ -161,7 +227,7 @@ class ChannelAttachments:
 
     async def _warn_duplicates(
         self, message: discord.Message, exact: dict[bytes, RepostStats], similar: list[Match],
-        *, private: bool,
+        *, private: bool, unset_keys: list[str],
     ) -> None:
         base_url = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}"
         heading = "⚠️ **Repostausosuma**"
@@ -208,12 +274,23 @@ class ChannelAttachments:
         log.info("Liiteindeksi: lähetetään varoitus %s, viesti=%s", destination, message.id)
         try:
             for offset in range(0, len(lines), 5):
+                content = "\n".join([heading, *lines[offset:offset + 5]])
+                view = None
+                if offset == 0 and unset_keys:
+                    settings = get_user_entry(message.author.id).get("settings", {})
+                    keys = [key for key in unset_keys if key not in settings]
+                    if keys:
+                        content += "\n\nValitse, miten haluat saada seuraavat varoitukset."
+                        view = WarningPreferences(message.author.id, keys)
                 warning = await target.send(
-                    "\n".join([heading, *lines[offset:offset + 5]]),
+                    content,
+                    view=view,
                     allowed_mentions=discord.AllowedMentions.none(),
                     suppress_embeds=True,
                     **send_options,
                 )
+                if view is not None:
+                    view.message = warning
                 if private:
                     register_message(warning)
         except discord.HTTPException:
