@@ -329,31 +329,39 @@ def _beat_floor(color: tuple[int, int, int]) -> Image.Image:
         for rail in range(-4, 5):
             draw.line((center + width1 * rail / 4, y1, center + width2 * rail / 4, y2),
                       fill=(*color, opacity))
+    for depth in (0.12, 0.27, 0.47, 0.72, 0.95):
+        y, half_width = _floor_projection(depth)
+        opacity = round(52 * math.sin(math.pi * depth))
+        draw.line((center - half_width, y, center + half_width, y), fill=(*color, opacity))
     return floor
 
 
 def _draw_beat_sweep(
     floor: Image.Image, beat_times: tuple[float, ...], now: float, color: tuple[int, int, int],
 ) -> None:
-    approach, release = 1.45, 0.32
-    first = bisect_left(beat_times, now - release)
-    last = bisect_right(beat_times, now + approach)
+    half_travel = 0.85
+    first = bisect_left(beat_times, now - half_travel)
+    last = bisect_right(beat_times, now + half_travel)
     draw = ImageDraw.Draw(floor)
     center = _WAVE_WIDTH / 2
+    horizon_y, horizon_width = _floor_projection(0.08)
+    foreground_y, foreground_width = _floor_projection(0.95)
     highlight = tuple(round((channel + 255) / 2) for channel in color)
-    # Draw far rows first. Perspective makes the same time step cover more
-    # pixels near the viewer, while the waveform above scrolls horizontally.
-    for beat in reversed(beat_times[first:last]):
+    for beat in beat_times[first:last]:
         age = now - beat
-        progress = (age + approach) / (approach + release)
-        depth = progress / (2 - progress)
-        y, half_width = _floor_projection(depth)
+        # Translate in floor space. The wider foreground moves more pixels per
+        # frame than the horizon, and the line crosses center exactly on the beat.
+        position = -age / half_travel
         pulse = max(0, 1 - abs(age) / 0.12)
-        fade = min(1, progress * 5, (1 - progress) * 7)
-        alpha = round(fade * (62 + 70 * depth + 123 * pulse))
+        fade = min(1, 4 * (1 - abs(position)))
+        alpha = round(fade * (118 + 137 * pulse))
         if alpha:
-            draw.line((center - half_width, y, center + half_width, y),
-                      fill=(*(highlight if pulse else color), alpha), width=1 + round(2 * pulse))
+            draw.line(
+                (center + position * horizon_width, horizon_y,
+                 center + position * foreground_width, foreground_y),
+                fill=(*(highlight if pulse else color), alpha),
+                width=2 + round(2 * pulse),
+            )
 
 
 def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: int | None, settings=SoundCloudVideoSettings(), palette=None, beat_times=()) -> None:

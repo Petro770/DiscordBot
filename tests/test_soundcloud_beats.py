@@ -41,20 +41,22 @@ class SoundCloudBeatTests(unittest.TestCase):
                 self.assertAlmostEqual(grid.seconds[0], phase, delta=0.035)
                 self.assertAlmostEqual(grid.seconds[12], phase + 12 * period, delta=0.045)
 
-    def test_sweep_widens_toward_foreground_and_peaks_on_beat(self):
-        bounds = []
+    def test_sweep_moves_right_to_left_faster_in_the_foreground(self):
+        positions = []
         peaks = []
-        for now in (0.5, 1.0, 1.15):
+        for now in (0.5, 1.0, 1.5):
             floor = Image.new("RGBA", (640, _BEAT_FLOOR_HEIGHT))
             _draw_beat_sweep(floor, (1.0,), now, (220, 150, 110))
             alpha = floor.getchannel("A")
-            bounds.append(alpha.getbbox())
+            positions.append([alpha.crop((0, y, 640, y + 1)).getbbox()[0] for y in (112, 200)])
             peaks.append(alpha.getextrema()[1])
 
-        self.assertLess(bounds[0][1], bounds[1][1])
-        self.assertLess(bounds[1][1], bounds[2][1])
-        self.assertGreater(bounds[0][0], bounds[1][0])
-        self.assertGreater(bounds[1][0], bounds[2][0])
+        right, center, left = positions
+        for depth in range(2):
+            self.assertGreater(right[depth], center[depth])
+            self.assertGreater(center[depth], left[depth])
+            self.assertAlmostEqual(center[depth], 320, delta=2)
+        self.assertGreater(right[1] - left[1], right[0] - left[0])
         self.assertGreater(peaks[1], max(peaks[0], peaks[2]))
 
     def test_frames_reserve_floor_space_when_a_beat_grid_exists(self):
