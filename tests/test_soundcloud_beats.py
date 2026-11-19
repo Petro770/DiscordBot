@@ -9,7 +9,8 @@ from shutil import which
 from PIL import Image
 
 from tools.soundcloud_beats import estimate_beat_grid, read_beat_grid
-from tools.soundcloud_video import _draw_beat_line
+from tools.soundcloud_video import _BEAT_FLOOR_HEIGHT, _WAVE_HEIGHT, _draw_beat_sweep, _wave_frames
+from tools.soundcloud_video_settings import SoundCloudVideoSettings
 
 
 class SoundCloudBeatTests(unittest.TestCase):
@@ -40,11 +41,25 @@ class SoundCloudBeatTests(unittest.TestCase):
                 self.assertAlmostEqual(grid.seconds[0], phase, delta=0.035)
                 self.assertAlmostEqual(grid.seconds[12], phase + 12 * period, delta=0.045)
 
-    def test_marker_moves_left_and_highlights_at_playhead(self):
-        before = Image.new("RGBA", (640, 112))
-        at_beat = before.copy()
-        _draw_beat_line(before, (1.0,), 0.5, 3.4)
-        _draw_beat_line(at_beat, (1.0,), 1.0, 3.4)
-        self.assertEqual(before.getpixel((414, 102))[3], 200)
-        self.assertEqual(before.getpixel((320, 102))[3], 0)
-        self.assertEqual(at_beat.getpixel((320, 102))[3], 255)
+    def test_sweep_widens_toward_foreground_and_peaks_on_beat(self):
+        bounds = []
+        peaks = []
+        for now in (0.5, 1.0, 1.15):
+            floor = Image.new("RGBA", (640, _BEAT_FLOOR_HEIGHT))
+            _draw_beat_sweep(floor, (1.0,), now, (220, 150, 110))
+            alpha = floor.getchannel("A")
+            bounds.append(alpha.getbbox())
+            peaks.append(alpha.getextrema()[1])
+
+        self.assertLess(bounds[0][1], bounds[1][1])
+        self.assertLess(bounds[1][1], bounds[2][1])
+        self.assertGreater(bounds[0][0], bounds[1][0])
+        self.assertGreater(bounds[1][0], bounds[2][0])
+        self.assertGreater(peaks[1], max(peaks[0], peaks[2]))
+
+    def test_frames_reserve_floor_space_when_a_beat_grid_exists(self):
+        envelope = (array("f", [0.1]) * 120,)
+        settings = SoundCloudVideoSettings(bands=1)
+        for beats, height in (((), _WAVE_HEIGHT), ((0.5,), _BEAT_FLOOR_HEIGHT)):
+            frame = next(_wave_frames(envelope, settings, beat_times=beats))
+            self.assertEqual(len(frame), 640 * height * 4)

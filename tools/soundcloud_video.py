@@ -36,6 +36,7 @@ _INTRO_SECONDS = 5
 _ENVELOPE_HZ = 120
 _WAVE_WIDTH = _FRAME_SIZE
 _WAVE_HEIGHT = 112
+_BEAT_FLOOR_HEIGHT = 216
 _NO_CONSOLE = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 # Taajuuskaista, aikaikkunan leveys (s), pystysijainti, väri ja viivan leveys.
 _WAVE_BANDS = (
@@ -277,7 +278,8 @@ def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(
         for band, maximum, style, color in zip(envelopes, maxima, styles, palette)
     ]
     # Prepare invariant background and edge fade just once per render.
-    background = Image.new("RGBA", (_WAVE_WIDTH, _WAVE_HEIGHT))
+    overlay_height = _BEAT_FLOOR_HEIGHT if beat_times else _WAVE_HEIGHT
+    background = Image.new("RGBA", (_WAVE_WIDTH, overlay_height))
     if settings.wave_background:
         ImageDraw.Draw(background).rounded_rectangle(
             (0, 0, _WAVE_WIDTH - 1, _WAVE_HEIGHT - 1), radius=16,
@@ -290,35 +292,68 @@ def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(
         edge_alpha.append(round(255 * amount * amount * (3 - 2 * amount)))
     edge_mask = Image.new("L", (_WAVE_WIDTH, 1))
     edge_mask.putdata(edge_alpha)
-    edge_mask = edge_mask.resize((_WAVE_WIDTH, _WAVE_HEIGHT))
-    beat_window = styles[0][1] * settings.wave_window_percent / 100
+    edge_mask = edge_mask.resize(background.size)
+    floor = _beat_floor(palette[0]) if beat_times else None
     frame_count = (len(envelopes[0]) * settings.fps + _ENVELOPE_HZ - 1) // _ENVELOPE_HZ
     for frame_index in range(frame_count):
         now = frame_index * _ENVELOPE_HZ / settings.fps
         frame = background.copy()
+        if floor is not None:
+            floor_frame = floor.copy()
+            _draw_beat_sweep(floor_frame, beat_times, frame_index / settings.fps, palette[0])
+            frame.alpha_composite(floor_frame)
         for strip, center in zip(strips, centers):
             frame.alpha_composite(strip.frame(now), (0, round(center - strip.amplitude - strip.margin)))
-        if beat_times:
-            _draw_beat_line(frame, beat_times, frame_index / settings.fps, beat_window)
         frame.putalpha(ImageChops.multiply(frame.getchannel("A"), edge_mask))
         yield frame.tobytes()
 
 
-def _draw_beat_line(frame: Image.Image, beat_times: tuple[float, ...], now: float, window: float) -> None:
-    pixels_per_second = (_WAVE_WIDTH - 1) / window
+def _floor_projection(depth: float) -> tuple[float, float]:
+    """Return the row's y position and half-width at a projected depth."""
+    horizon = _WAVE_HEIGHT - 13
+    y = horizon + depth * (_BEAT_FLOOR_HEIGHT - 1 - horizon)
+    half_width = 28 + depth * (_WAVE_WIDTH / 2 - 28)
+    return y, half_width
+
+
+def _beat_floor(color: tuple[int, int, int]) -> Image.Image:
+    floor = Image.new("RGBA", (_WAVE_WIDTH, _BEAT_FLOOR_HEIGHT))
+    draw = ImageDraw.Draw(floor)
     center = _WAVE_WIDTH / 2
-    half_window = center / pixels_per_second
-    first = bisect_left(beat_times, now - half_window)
-    last = bisect_right(beat_times, now + half_window)
-    draw = ImageDraw.Draw(frame)
-    y = _WAVE_HEIGHT - 7
-    draw.line((0, y, _WAVE_WIDTH - 1, y), fill=(255, 222, 170, 105))
-    for beat in beat_times[first:last]:
-        x = round(center + (beat - now) * pixels_per_second)
-        active = abs(beat - now) <= 0.055
-        draw.line((x, y - (10 if active else 5), x, y + 3),
-                  fill=(255, 222, 170, 255 if active else 200),
-                  width=3 if active else 2)
+    for step in range(12):
+        start = step / 12
+        end = (step + 1) / 12
+        y1, width1 = _floor_projection(start)
+        y2, width2 = _floor_projection(end)
+        opacity = round(76 * math.sin(math.pi * (start + end) / 2))
+        for rail in range(-4, 5):
+            draw.line((center + width1 * rail / 4, y1, center + width2 * rail / 4, y2),
+                      fill=(*color, opacity))
+    return floor
+
+
+def _draw_beat_sweep(
+    floor: Image.Image, beat_times: tuple[float, ...], now: float, color: tuple[int, int, int],
+) -> None:
+    approach, release = 1.45, 0.32
+    first = bisect_left(beat_times, now - release)
+    last = bisect_right(beat_times, now + approach)
+    draw = ImageDraw.Draw(floor)
+    center = _WAVE_WIDTH / 2
+    highlight = tuple(round((channel + 255) / 2) for channel in color)
+    # Draw far rows first. Perspective makes the same time step cover more
+    # pixels near the viewer, while the waveform above scrolls horizontally.
+    for beat in reversed(beat_times[first:last]):
+        age = now - beat
+        progress = (age + approach) / (approach + release)
+        depth = progress / (2 - progress)
+        y, half_width = _floor_projection(depth)
+        pulse = max(0, 1 - abs(age) / 0.12)
+        fade = min(1, progress * 5, (1 - progress) * 7)
+        alpha = round(fade * (62 + 70 * depth + 123 * pulse))
+        if alpha:
+            draw.line((center - half_width, y, center + half_width, y),
+                      fill=(*(highlight if pulse else color), alpha), width=1 + round(2 * pulse))
 
 
 def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: int | None, settings=SoundCloudVideoSettings(), palette=None, beat_times=()) -> None:
@@ -484,6 +519,8 @@ def _render_video(
         "SoundCloud-video [%s]: analyysi valmis %.1f sekunnissa, äänen kesto %.1f s",
         message_id, monotonic() - started, duration,
     )
+    beat_times = beat_grid.seconds if beat_grid else ()
+    overlay_height = _BEAT_FLOOR_HEIGHT if beat_times else _WAVE_HEIGHT
     with tempfile.TemporaryDirectory(prefix="soundcloud_video_") as directory:
         cover_path = Path(directory) / "cover.png"
         intro_path = Path(directory) / "intro.png"
@@ -498,7 +535,7 @@ def _render_video(
                 "-loop", "1", "-framerate", str(settings.fps), "-i", str(cover_path),
                 "-i", str(intro_path), "-i", audio_path, "-i", str(title_path),
                 "-f", "rawvideo", "-pixel_format", "rgba",
-                "-video_size", f"{_WAVE_WIDTH}x{_WAVE_HEIGHT}",
+                "-video_size", f"{_WAVE_WIDTH}x{overlay_height}",
                 "-framerate", str(settings.fps), "-i", "pipe:0",
                 "-filter_complex_threads", "1", "-filter_complex",
                 f"[0:v][1:v]overlay=enable='lt(t,{settings.intro_seconds})'[intro];"
@@ -510,7 +547,7 @@ def _render_video(
                 "-movflags", "+faststart", str(video_path),
             ],
             envelopes, message_id, settings, _wave_palette(cover, settings.bands),
-            beat_grid.seconds if beat_grid else (),
+            beat_times,
         )
         video_size = os.path.getsize(video_path)
         if video_size > file_limit:
