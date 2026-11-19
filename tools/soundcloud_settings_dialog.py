@@ -1,9 +1,10 @@
 """SoundCloud clipboard video preferences."""
 from dataclasses import asdict
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QLabel, QFormLayout, QSpinBox, QComboBox,
+    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QFormLayout, QSpinBox, QComboBox,
     QCheckBox, QDialogButtonBox, QMessageBox, QScrollArea, QWidget,
 )
+from tools.soundcloud_video_preview import SoundCloudVideoPreview
 from tools.soundcloud_video_settings import MAX_VIDEO_BANDS, SoundCloudVideoSettings
 
 
@@ -12,7 +13,7 @@ class SoundCloudSettingsDialog(QDialog):
         super().__init__(parent)
         self.settings = settings
         self.setWindowTitle("SoundCloud-videon oletusasetukset")
-        self.resize(580, 620)
+        self.resize(880, 620)
         layout = QVBoxLayout(self)
         info = QLabel(
             "Asetukset koskevat seuraavia leikepöydältä tehtäviä SoundCloud-videoita. "
@@ -62,7 +63,12 @@ class SoundCloudSettingsDialog(QDialog):
         form.addRow(compress)
         self.controls["auto_compress"] = compress
         scroll.setWidget(body)
-        layout.addWidget(scroll)
+        columns = QHBoxLayout()
+        columns.addWidget(scroll, stretch=1)
+        preview = SoundCloudVideoPreview(settings, self)
+        columns.addWidget(preview)
+        layout.addLayout(columns)
+        self.finished.connect(preview.stop)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults)
         buttons.button(QDialogButtonBox.Save).setText("Tallenna")
         buttons.button(QDialogButtonBox.Cancel).setText("Peruuta")

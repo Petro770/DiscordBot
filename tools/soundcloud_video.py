@@ -1,5 +1,6 @@
 """Muodosta SoundCloud-kappaleesta kansikuvallinen MP4."""
 import asyncio
+from base64 import b64encode
 from bisect import bisect_left, bisect_right
 import colorsys
 import io
@@ -21,7 +22,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageChops
 from static_ffmpeg import run
 
 from core.logging import log
-from tools.download_progress import report
+from tools.download_progress import progress_enabled, report
 from tools.soundcloud_beats import read_beat_grid
 from tools.soundcloud_video_settings import SoundCloudVideoSettings
 from downloaders.base import finalize
@@ -33,6 +34,8 @@ _ARTWORK_URL = re.compile(
 _MAX_ARTWORK_BYTES = 5 * 1024 * 1024
 _FRAME_SIZE = 640
 _INTRO_SECONDS = 5
+_WAVE_Y = 380
+_TITLE_Y = 22
 _ENVELOPE_HZ = 120
 _WAVE_WIDTH = _FRAME_SIZE
 _WAVE_HEIGHT = 112
@@ -345,7 +348,26 @@ def _draw_beat_sweep(
             )
 
 
-def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: int | None, settings=SoundCloudVideoSettings(), palette=None, beat_times=()) -> None:
+def _report_preview(frame, seconds, overlay_height, cover, intro, title_image, intro_seconds):
+    canvas = (intro if seconds < intro_seconds else cover).convert("RGBA")
+    if seconds < intro_seconds:
+        travel = title_image.width - (_FRAME_SIZE - 64)
+        x = (_FRAME_SIZE - title_image.width) // 2
+        if travel > 0:
+            progress = min(1, max(0, (seconds - 0.5) / max(0.1, intro_seconds - 1)))
+            x = round(32 - travel * progress)
+        canvas.alpha_composite(title_image, (x, _TITLE_Y))
+    canvas.alpha_composite(Image.frombytes("RGBA", (_WAVE_WIDTH, overlay_height), frame), (0, _WAVE_Y))
+    preview = canvas.convert("RGB")
+    preview.thumbnail((240, 240), Image.Resampling.LANCZOS)
+    output = io.BytesIO()
+    preview.save(output, format="JPEG", quality=68)
+    payload = b64encode(output.getvalue()).decode("ascii")
+    if len(payload) < 60_000:
+        report("preview", image=payload)
+
+
+def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: int | None, settings=SoundCloudVideoSettings(), palette=None, beat_times=(), *, preview=None) -> None:
     with tempfile.TemporaryFile() as errors, subprocess.Popen(
         command, stdin=subprocess.PIPE, stderr=errors, creationflags=_NO_CONSOLE,
     ) as ffmpeg:
@@ -370,6 +392,7 @@ def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: 
         watchdog.daemon = True
         started = last_update = monotonic()
         last_progress = started
+        last_preview = -math.inf
         total_frames = (len(envelopes[0]) * settings.fps + _ENVELOPE_HZ - 1) // _ENVELOPE_HZ
         report("render", "Muodostetaan aaltomuotovideota…", 0)
         frames_written = 0
@@ -382,6 +405,9 @@ def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: 
                     last_activity = monotonic()
                     frames_written += 1
                     now = monotonic()
+                    if preview is not None and now - last_preview >= 0.5:
+                        preview(frame, (frames_written - 1) / settings.fps)
+                        last_preview = now
                     if now - last_progress >= 0.5:
                         speed = frames_written / max(now - started, 0.001)
                         report("render", f"{frames_written}/{total_frames} ruutua · {speed:.1f} ruutua/s",
@@ -518,6 +544,9 @@ def _render_video(
         cover.save(cover_path)
         intro.save(intro_path)
         title_image.save(title_path)
+        def preview(frame, seconds):
+            _report_preview(frame, seconds, overlay_height, cover, intro, title_image, settings.intro_seconds)
+
         _encode_video(
             [
                 ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error",
@@ -528,15 +557,15 @@ def _render_video(
                 "-framerate", str(settings.fps), "-i", "pipe:0",
                 "-filter_complex_threads", "1", "-filter_complex",
                 f"[0:v][1:v]overlay=enable='lt(t,{settings.intro_seconds})'[intro];"
-                f"[intro][3:v]overlay=x='{title_x}':y=22:enable='lt(t,{settings.intro_seconds})'[cover];"
-                f"[cover][4:v]overlay=x=0:y=380:eof_action=pass,scale={settings.resolution}:{settings.resolution}[video]",
+                f"[intro][3:v]overlay=x='{title_x}':y={_TITLE_Y}:enable='lt(t,{settings.intro_seconds})'[cover];"
+                f"[cover][4:v]overlay=x=0:y={_WAVE_Y}:eof_action=pass,scale={settings.resolution}:{settings.resolution}[video]",
                 "-map", "[video]", "-map", "2:a:0", "-shortest", "-t", str(duration),
                 "-c:v", "libx264", "-preset", settings.preset, "-crf", str(settings.crf),
                 "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", f"{settings.audio_kbps}k",
                 "-movflags", "+faststart", str(video_path),
             ],
             envelopes, message_id, settings, _wave_palette(cover, settings.bands),
-            beat_times,
+            beat_times, preview=preview if progress_enabled() else None,
         )
         video_size = os.path.getsize(video_path)
         if video_size > file_limit:
@@ -554,7 +583,9 @@ def _render_video(
             video_path = compressed_path
             video_size = video_path.stat().st_size
         log.info("SoundCloud-video [%s]: MP4 valmis (%d tavua, raja %d)", message_id, video_size, file_limit)
-        return finalize(str(video_path), "soundcloud")
+        result = finalize(str(video_path), "soundcloud")
+        report("soundcloud_video", ffmpeg=str(ffmpeg), duration=duration, fps=settings.fps)
+        return result
 
 
 def _decode_artwork(data: bytes) -> Image.Image | None:

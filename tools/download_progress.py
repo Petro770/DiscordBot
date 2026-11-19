@@ -12,6 +12,10 @@ def enable_stdout_progress():
     _enabled = True
 
 
+def progress_enabled():
+    return _enabled
+
+
 def report(stage, detail="", percent=None, **metrics):
     if _enabled:
         print(_PREFIX + json.dumps(dict(stage=stage, detail=detail, percent=percent, **metrics),
