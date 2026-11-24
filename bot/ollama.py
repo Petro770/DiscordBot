@@ -37,22 +37,24 @@ def _is_image(attachment: discord.Attachment) -> bool:
     return Path(attachment.filename).suffix.lower() in _IMAGE_SUFFIXES
 
 
-async def _supports_vision(session, host: str, model: str, timeout: aiohttp.ClientTimeout) -> bool:
+async def _model_kind(session, host: str, model: str, timeout: aiohttp.ClientTimeout) -> str | None:
     try:
         async with session.post(
             f"{host}/api/show", json={"model": model}, timeout=timeout, allow_redirects=False,
         ) as response:
             data = await response.json()
-        if not data.get("remote_host") and "vision" in data.get("capabilities", ()):
-            log.info("Ollama %s / %s: paikallinen kuvatuki vahvistettu", host, model)
-            return True
-        log.info("Ollama %s / %s: mallilla ei ole paikallista kuvatukea", host, model)
+        if data.get("remote_host"):
+            return "remote"
+        capabilities = data.get("capabilities")
+        if isinstance(capabilities, list):
+            return "vision" if "vision" in capabilities else "text"
+        log.info("Ollama %s / %s: palvelin ei ilmoittanut mallin kykyjä", host, model)
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError, AttributeError) as exc:
         log.warning(
-            "Ollama %s / %s: kuvatukea ei saatu tarkistettua (%s, HTTP %s)",
+            "Ollama %s / %s: mallin kykyjä ei saatu tarkistettua (%s, HTTP %s)",
             host, model, type(exc).__name__, getattr(exc, "status", "-"),
         )
-    return False
+    return None
 
 
 def _system_prompt() -> str:
@@ -102,6 +104,16 @@ class OllamaHosts:
         self.hosts = tuple(dict.fromkeys(hosts))
         self._busy: set[str] = set()
         self._available = asyncio.Condition()
+        self._model_kinds: dict[tuple[str, str], tuple[float, str | None]] = {}
+
+    async def model_kind(self, session, host: str, model: str, timeout: aiohttp.ClientTimeout):
+        key = (host, model)
+        cached = self._model_kinds.get(key)
+        if cached and cached[0] > monotonic():
+            return cached[1]
+        kind = await _model_kind(session, host, model, timeout)
+        self._model_kinds[key] = (monotonic() + (300 if kind else 30), kind)
+        return kind
 
     @asynccontextmanager
     async def reserve(self, candidates: list[str]):
@@ -119,8 +131,9 @@ class OllamaHosts:
 
 async def _generate_on_host(
     session: aiohttp.ClientSession, discovery_timeout: aiohttp.ClientTimeout,
-    host: str, prompt: str, system_prompt: str, image: str | None, message_id: int | None,
-) -> tuple[str | None, int]:
+    hosts: OllamaHosts, host: str, prompt: str, system_prompt: str, image: str | None,
+    message_id: int | None, preferred_model: str | None,
+) -> tuple[str | None, str | None, int]:
     models = config.OLLAMA_MODELS
     if not models:
         log.info("Ollama %s: haetaan mallilista", host)
@@ -141,9 +154,11 @@ async def _generate_on_host(
                 "Ollama %s: mallien haku epäonnistui (%s, HTTP %s)",
                 host, type(exc).__name__, getattr(exc, "status", "-"),
             )
-            return None, 0
+            return None, None, 0
 
     candidates = tuple(model for model in models if model not in config.OLLAMA_EXCLUDED_MODELS)
+    if preferred_model in candidates:
+        candidates = (preferred_model, *(model for model in candidates if model != preferred_model))
     log.info("Ollama %s: kokeiltavat mallit=%s (ehdokkaita ennen poissulkuja=%s)",
              host, candidates, len(models))
     if not candidates:
@@ -153,7 +168,12 @@ async def _generate_on_host(
     if image is not None:
         user_message["images"] = [image]
     for model in candidates:
-        if image is not None and not await _supports_vision(session, host, model, discovery_timeout):
+        kind = await hosts.model_kind(session, host, model, discovery_timeout)
+        if kind == "remote" or (image is not None and kind != "vision") or (image is None and kind == "vision"):
+            log.info("Ollama %s / %s: ohitettu | mallityyppi=%s | kuvapyyntö=%s",
+                     host, model, kind, image is not None)
+            trace("model_skipped", message_id, host=host, model=model, model_kind=kind,
+                  has_image=image is not None)
             continue
         attempts += 1
         started = monotonic()
@@ -188,7 +208,7 @@ async def _generate_on_host(
                 continue
             if answer:
                 log.info("Ollama %s / %s: vastaus saatu (%.1f s)", host, model, monotonic() - started)
-                return answer, attempts
+                return answer, model, attempts
             log.warning("Ollama %s / %s: tyhjä vastaus", host, model)
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError) as exc:
             log.warning(
@@ -198,12 +218,13 @@ async def _generate_on_host(
             trace("model_error", message_id, host=host, model=model, error=type(exc).__name__,
                   status=getattr(exc, "status", None), elapsed_seconds=round(monotonic() - started, 3))
 
-    return None, attempts
+    return None, None, attempts
 
 
 async def _generate(
-    prompt: str, system_prompt: str, hosts: OllamaHosts, image: str | None = None, *, message_id: int | None = None,
-) -> str | None:
+    prompt: str, system_prompt: str, hosts: OllamaHosts, image: str | None = None, *,
+    message_id: int | None = None, preferred: tuple[str, str] | None = None,
+) -> tuple[str, tuple[str, str]] | None:
     timeout = aiohttp.ClientTimeout(
         total=config.OLLAMA_MODEL_TIMEOUT_SECONDS,
         connect=config.OLLAMA_CONNECT_TIMEOUT_SECONDS,
@@ -212,17 +233,20 @@ async def _generate(
     remaining = list(hosts.hosts)
     if not remaining:
         log.warning("Ollama: yhtään palvelinta ei ole määritetty | viesti=%s", message_id)
+    preferred_host, preferred_model = preferred or (None, None)
     attempts = 0
     async with aiohttp.ClientSession(timeout=timeout, raise_for_status=True) as session:
         while remaining:
-            async with hosts.reserve(remaining) as host:
+            candidates = [preferred_host] if preferred_host in remaining else remaining
+            async with hosts.reserve(candidates) as host:
                 remaining.remove(host)
-                answer, host_attempts = await _generate_on_host(
-                    session, discovery_timeout, host, prompt, system_prompt, image, message_id,
+                answer, model, host_attempts = await _generate_on_host(
+                    session, discovery_timeout, hosts, host, prompt, system_prompt, image,
+                    message_id, preferred_model if host == preferred_host else None,
                 )
                 attempts += host_attempts
-                if answer:
-                    return answer
+                if answer and model:
+                    return answer, (host, model)
     if image is not None and not attempts:
         log.warning(
             "Ollama: yhtään kuvia tukevaa mallia ei saatu vahvistettua | viesti=%s | palvelimia=%s",
@@ -303,7 +327,7 @@ class OllamaReplies:
             # Read context after the preceding turn has been sent and recorded.
             if previous is not None:
                 await asyncio.shield(previous)
-            payload = style = None
+            payload = style = text_target = None
             if images and image is None:
                 log.warning(
                     "Ollama: kuvaliitteet ylittävät kokorajan | viesti=%s | kuvia=%s | raja=%s tavua",
@@ -312,12 +336,12 @@ class OllamaReplies:
                 answer = "Liitä enintään 8 Mt:n kuva, niin voin yrittää tulkita sen."
             elif prompt:
                 async with self._workers:
-                    answer, style, payload = await self._answer(message, prompt, bot_user_id, image)
+                    answer, style, payload, text_target = await self._answer(message, prompt, bot_user_id, image)
             else:
                 log.info("Ollama: maininnassa ei ollut kysymystä tai sopivaa kuvaa | viesti=%s", message.id)
                 answer = "Kirjoita kysymys samaan viestiin maininnan kanssa."
             if await self._reply(message, answer) and payload is not None:
-                self._memory.remember(channel_id, payload, answer, style)
+                self._memory.remember(channel_id, payload, answer, style, text_target)
                 if style:
                     log.info("Ollama: istunnon tyyli päivitetty | kanava=%s", channel_id)
         finally:
@@ -330,7 +354,7 @@ class OllamaReplies:
     async def _answer(
         self, message: discord.Message, prompt: str, bot_user_id: int,
         image: discord.Attachment | None,
-    ) -> tuple[str, str | None, str | None]:
+    ) -> tuple[str, str | None, str | None, tuple[str, str] | None]:
         log.info("Ollama: käsittely alkaa | viesti=%s", message.id)
         async with AsyncExitStack() as typing:
             try:
@@ -343,10 +367,10 @@ class OllamaReplies:
                     raw = await asyncio.wait_for(image.read(), timeout=10)
                 except (discord.HTTPException, asyncio.TimeoutError) as exc:
                     log.warning("Ollama: kuvaa ei saatu ladattua | viesti=%s | %s", message.id, type(exc).__name__)
-                    return "Kuvaa ei saatu ladattua Discordista.", None, None
+                    return "Kuvaa ei saatu ladattua Discordista.", None, None, None
                 if not raw or len(raw) > _MAX_IMAGE_BYTES:
                     log.warning("Ollama: kuvan data hylätty | viesti=%s | tavua=%s", message.id, len(raw))
-                    return "Kuvan pitää olla enintään 8 Mt ja sisältää kuvadataa.", None, None
+                    return "Kuvan pitää olla enintään 8 Mt ja sisältää kuvadataa.", None, None, None
                 image_data = b64encode(raw).decode("ascii")
                 log.info("Ollama: kuva ladattu | viesti=%s | tavua=%s", message.id, len(raw))
 
@@ -354,9 +378,11 @@ class OllamaReplies:
             context = self._memory.add_context(message.channel.id, payload)
             trace("model_input", message.id, system=self._system_prompt, user=context,
                   has_image=image_data is not None)
+            preferred = self._memory.text_target(message.channel.id) if image is None else None
             try:
-                answer = await asyncio.wait_for(
-                    _generate(context, self._system_prompt, self._hosts, image_data, message_id=message.id),
+                result = await asyncio.wait_for(
+                    _generate(context, self._system_prompt, self._hosts, image_data,
+                              message_id=message.id, preferred=preferred),
                     timeout=config.OLLAMA_TOTAL_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
@@ -365,16 +391,17 @@ class OllamaReplies:
                     config.OLLAMA_TOTAL_TIMEOUT_SECONDS, message.id, image is not None,
                 )
                 trace("model_timeout", message.id, timeout_seconds=config.OLLAMA_TOTAL_TIMEOUT_SECONDS)
-                answer = None
-        answer, style = split_style(answer or "")
+                result = None
+        raw_answer, target = result or ("", None)
+        answer, style = split_style(raw_answer)
         if not answer:
             log.warning("Ollama: viesti %s jäi ilman mallin vastausta", message.id)
             if image is not None:
-                return "Ollama ei saanut tulkittua kuvaa. Tarkista lokista, löytyikö kuvaa tukeva malli.", None, None
-            return "Ollama ei saanut tällä kertaa muodostettua vastausta.", None, None
+                return "Ollama ei saanut tulkittua kuvaa. Tarkista lokista, löytyikö kuvaa tukeva malli.", None, None, None
+            return "Ollama ei saanut tällä kertaa muodostettua vastausta.", None, None, None
         rendered = render_people(answer, mentions)
         trace("parsed_response", message.id, content=rendered, style=style)
-        return rendered, style, payload
+        return rendered, style, payload, target if image is None else None
 
     async def _reply(self, message: discord.Message, answer: str) -> bool:
         channel_id = message.channel.id

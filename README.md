@@ -67,7 +67,11 @@ tageineen sellaisina kuin Ollama ilmoittaa ne.
 
 Ilman huutomerkkiä annetut nimet muodostavat kokeilulistan. Jos sama nimi
 on sekä kokeilulistalla että poissuljettu, poissulku voittaa. Botti käyttää
-ensimmäistä onnistunutta vastausta. Lokista näkee vastanneen palvelimen ja mallin.
+ensimmäistä onnistunutta vastausta. Seuraava tekstivuoro samassa kanavassa,
+ketjussa tai yksityisviestikeskustelussa yrittää ensin viimeksi toiminutta
+palvelinta ja mallia. Epäonnistuessa botti kokeilee varamalleja jäljellä
+olevan aikarajan puitteissa. Kuvamallit ohitetaan tekstipyynnöissä, kun
+Ollama ilmoittaa mallille kuvatukea. Lokista näkee vastanneen parin.
 
 Botti lähettää Ollamalle ohjeet, mainintaviestin tekstin ja
 tunnistettujen henkilöiden näyttönimet ja roolit. Se tunnistaa kirjoittajan,
@@ -116,7 +120,7 @@ WebP-liitettä, jonka koko on enintään 8 Mt.
 Ollama-palvelimella pitää olla asennettuna malli, joka ilmoittaa
 `vision`-tuen `/api/show`-vastauksessa. Jos käytät `OLLAMA_MODELS`-kokeilulistaa,
 pidä listassa vähintään yksi kuvamalli. Botti ohittaa tekstimallit
-kuvapyynnöissä. Kuvadata lähetetään mallille vain tämän pyynnön yhteydessä.
+kuvapyynnöissä. Kuvavuoro ei vaihda keskustelun tekstimallia. Kuvadata lähetetään mallille vain tämän pyynnön yhteydessä.
 Keskustelumuistiin voi jäädä katkelma botin tekstivastauksesta.
 
 ### Ollaman aikarajat
