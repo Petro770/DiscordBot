@@ -66,6 +66,7 @@ def _env_bool(key: str, default: bool = True) -> bool:
 
 
 ENABLE_OLLAMA = _env_bool("ENABLE_OLLAMA", default=False)
+OLLAMA_INSTRUCTIONS_FILE = os.getenv("OLLAMA_INSTRUCTIONS_FILE", "").strip()
 OLLAMA_HOSTS = tuple(
     host.strip().rstrip("/")
     for host in os.getenv(

@@ -59,13 +59,26 @@ lista tarkoista paikallisista mallinimistä. Botti kokeilee listaa kullekin
 palvelimelle ja käyttää ensimmäistä onnistunutta vastausta. Lokista näkee
 vastanneen palvelimen ja mallin.
 
-Botti lähettää Ollamalle vain mainintaviestin tekstin ilman omaa mainintaansa.
+Botti lähettää Ollamalle Glorpin ohjeet ja mainintaviestin tekstin ilman omaa mainintaansa.
 Se käsittelee yhden Ollama-kysymyksen kerrallaan. Botin koneen pitää päästä
 Ollama-palvelimiin lähiverkosta. Yhteyden voi tarkistaa botin koneelta
 esimerkiksi PowerShellissä komennolla
 `Invoke-RestMethod http://192.168.1.11:11434/api/tags`.
 Jos Ollama kuuntelee vain paikallisia yhteyksiä, määritä palvelimella
 `OLLAMA_HOST` kuuntelemaan lähiverkon osoitetta.
+
+### Glorpin persoona ja ohjeet
+
+[bot/glorp.md](bot/glorp.md) sisältää Glorpin puhetyylin ja ohjeet botin
+Discord-toiminnoista. Kokeile esimerkiksi `@Glorp mitä osaat?` tai
+`@Glorp miten laitan repostausvaroitukset yksityisviesteihin?`.
+Glorp saa lisäksi tiedon käytössä olevista medialatauspalveluista,
+kuvatulostuksesta ja liiteindeksoinnista.
+
+Jos haluat omat ohjeet, kopioi oletusohje UTF-8-tiedostoksi, muokkaa
+sitä ja aseta `OLLAMA_INSTRUCTIONS_FILE=glorp-paikallinen.md` tiedostoon
+`.env`. Suhteellinen polku alkaa projektikansiosta. Käynnistä botti uudelleen
+ladataksesi muutokset.
 
 ## Leikepöydän medialataukset
 
