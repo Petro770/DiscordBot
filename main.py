@@ -19,7 +19,7 @@ async def main():
     if not config.TOKEN:
         raise SystemExit("Aseta DISCORD_TOKEN config.py-tiedostoon.")
 
-    log.info("BogosBinted v%s käynnistyy...", config.BOT_VERSION)
+    log.info("DiscordBot v%s käynnistyy...", config.BOT_VERSION)
 
     bot = create_bot()
     print_queue = PrintQueue()

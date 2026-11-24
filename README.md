@@ -1,6 +1,6 @@
-# DiscordBot (Bogos Binted)
+# DiscordBot
 
-Bogos Binted on Pythonilla tehty Discord-botti, joka käsittelee kuvia ja medialinkkejä yksityisviesteissä ja määritetyllä palvelinkanavalla. Botti lataa mediaa YouTubesta, Instagramista, X:stä, TikTokista, Twitchistä ja SoundCloudista, pakkaa tarvittaessa videoita ja lähettää tuloksen Discordiin. Botti lähettää SoundCloud-kappaleen MP4-videona, jossa kansikuva näkyy koko ajan ja kappaleen nimi sekä artisti ensimmäiset viisi sekuntia. Jos videota ei saada tehtyä tai se ylittää Discordin kokorajan, botti käyttää MP3-tiedostoa. Kuvia voi myös tulostaa Windowsissa emoji-reaktiolla.
+DiscordBot on Pythonilla tehty Discord-botti, joka käsittelee kuvia ja medialinkkejä yksityisviesteissä ja määritetyllä palvelinkanavalla. Botti lataa mediaa YouTubesta, Instagramista, X:stä, TikTokista, Twitchistä ja SoundCloudista, pakkaa tarvittaessa videoita ja lähettää tuloksen Discordiin. Botti lähettää SoundCloud-kappaleen MP4-videona, jossa kansikuva näkyy koko ajan ja kappaleen nimi sekä artisti ensimmäiset viisi sekuntia. Jos videota ei saada tehtyä tai se ylittää Discordin kokorajan, botti käyttää MP3-tiedostoa. Kuvia voi myös tulostaa Windowsissa emoji-reaktiolla.
 
 ## Asennus ja käynnistys
 
@@ -46,7 +46,7 @@ Lähetä botille tuettu medialinkki tai kuva yksityisviestinä tai määritetyll
 ## Ollama-vastaukset
 
 Lisää `ENABLE_OLLAMA=true` tiedostoon `.env` ja käynnistä botti uudelleen.
-Kokeile Discordissa esimerkiksi `@K-Embedder Miksi taivas on sininen?`.
+Kokeile Discordissa esimerkiksi `@Botti Miksi taivas on sininen?`.
 Botti vastaa suoraan viestiin yksityisviesteissä ja sallituilla palvelinkanavilla.
 Oletuksena sallittu kanava on `TARGET_CHANNEL_ID`. Voit antaa useita
 kanavatunnisteita pilkulla eroteltuina asetuksessa `OLLAMA_CHANNEL_IDS`.
@@ -59,7 +59,7 @@ lista tarkoista paikallisista mallinimistä. Botti kokeilee listaa kullekin
 palvelimelle ja käyttää ensimmäistä onnistunutta vastausta. Lokista näkee
 vastanneen palvelimen ja mallin.
 
-Botti lähettää Ollamalle Glorpin ohjeet ja mainintaviestin tekstin ilman omaa mainintaansa.
+Botti lähettää Ollamalle botin ohjeet ja mainintaviestin tekstin ilman omaa mainintaansa.
 Se käsittelee yhden Ollama-kysymyksen kerrallaan. Botin koneen pitää päästä
 Ollama-palvelimiin lähiverkosta. Yhteyden voi tarkistaa botin koneelta
 esimerkiksi PowerShellissä komennolla
@@ -67,18 +67,19 @@ esimerkiksi PowerShellissä komennolla
 Jos Ollama kuuntelee vain paikallisia yhteyksiä, määritä palvelimella
 `OLLAMA_HOST` kuuntelemaan lähiverkon osoitetta.
 
-### Glorpin persoona ja ohjeet
+### Botin persoona ja ohjeet
 
-[bot/glorp.md](bot/glorp.md) sisältää Glorpin puhetyylin ja ohjeet botin
-Discord-toiminnoista. Kokeile esimerkiksi `@Glorp mitä osaat?` tai
-`@Glorp miten laitan repostausvaroitukset yksityisviesteihin?`.
-Glorp saa lisäksi tiedon käytössä olevista medialatauspalveluista,
+[instructions/discord-assistant.md](instructions/discord-assistant.md) sisältää puhetyylin ja ohjeet botin
+Discord-toiminnoista. Kokeile esimerkiksi `@Botti mitä osaat?` tai
+`@Botti miten laitan repostausvaroitukset yksityisviesteihin?`.
+Botti saa lisäksi tiedon käytössä olevista medialatauspalveluista,
 kuvatulostuksesta ja liiteindeksoinnista.
 
 Jos haluat omat ohjeet, kopioi oletusohje UTF-8-tiedostoksi, muokkaa
-sitä ja aseta `OLLAMA_INSTRUCTIONS_FILE=glorp-paikallinen.md` tiedostoon
+sitä ja aseta `OLLAMA_INSTRUCTIONS_FILE=instructions/local.md` tiedostoon
 `.env`. Suhteellinen polku alkaa projektikansiosta. Käynnistä botti uudelleen
-ladataksesi muutokset.
+ladataksesi muutokset. Git ohittaa tiedoston `instructions/local.md`.
+Kirjoita Discordissa esimerkkien `@Botti`-maininnan tilalle oman bottisi maininta.
 
 ## Leikepöydän medialataukset
 

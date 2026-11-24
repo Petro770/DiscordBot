@@ -12,10 +12,11 @@ from core.logging import log
 
 
 def _system_prompt() -> str:
-    default_file = Path(__file__).with_name("glorp.md")
+    project_dir = Path(__file__).resolve().parents[1]
+    default_file = project_dir / "instructions" / "discord-assistant.md"
     instructions = default_file.read_text(encoding="utf-8-sig").strip()
     if config.OLLAMA_INSTRUCTIONS_FILE:
-        custom_file = default_file.parent.parent / config.OLLAMA_INSTRUCTIONS_FILE
+        custom_file = project_dir / config.OLLAMA_INSTRUCTIONS_FILE
         try:
             custom = custom_file.read_text(encoding="utf-8-sig").strip()
             if custom:

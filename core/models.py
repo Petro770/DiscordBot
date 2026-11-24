@@ -115,7 +115,7 @@ class VideoInfo:
 
         link_terms = ["Linkki", "Original", "OG", "Alkuperäinen",
             "Lähde", "Alkuperäinen linkki", "Avaruuslähde",
-            "Glorpattu linkki", "Alkuperäinen signaali",
+            "Käsitelty linkki", "Alkuperäinen signaali",
             "Kotiplaneetan data", "Madonreikä", "Emäaluksen arkisto",
             "Valovuosilinkki", "Kosminen url", "Telepatialinkki",
             "Sädehoitolähde"]

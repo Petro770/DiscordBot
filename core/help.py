@@ -54,7 +54,7 @@ def parse_help_command(text: str) -> str | None:
 # SISÄLTÖ
 # ============================================================
 
-HELP_GENERAL = """👽 **Bogos Binted – Ohje**
+HELP_GENERAL = """👽 **Discord-botin ohje**
 
 **Videot & kuvat:**
 Lähetä linkki (YouTube, Instagram, X, TikTok, Twitch, SoundCloud) tai kuva → bot lataa ja lähettää tiedoston.
@@ -145,7 +145,7 @@ Poistaa kaiken botin tallentaman tietosi:
 **Komento:**
 `UNOHDAMINUT`
 
-*Toiminta on peruuttamaton. Bogos Binted ei muista sinua enää.*"""
+*Toiminta on peruuttamaton. Tallennetut tietosi poistetaan.*"""
 
 
 # ============================================================

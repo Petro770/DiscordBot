@@ -23,7 +23,7 @@ if not 0 <= REPOST_WARNING_THRESHOLD <= 100:
     raise ValueError("REPOST_WARNING_THRESHOLD pitää olla välillä 0–100.")
 REACTION_EMOJI = "👽"
 URL_REACTION_EMOJI = "🎬"
-MEME_TEXT = "Bogos Binted!"
+MEME_TEXT = "Tulostus valmis!"
 REPLY_DELETE_AFTER = 5 * 60  # Sekuntia
 STATUS_DELETE_DELAY = int(os.getenv("STATUS_DELETE_DELAY", "3"))
 

@@ -98,7 +98,7 @@ def format_changelog_since(user_version: str,current_version: str,entries: list[
     relevant.reverse()
 
     lines: list[str] = []
-    lines.append(f"🛸 **Bogos Binted päivitykset**")
+    lines.append("🛸 **Botin päivitykset**")
     lines.append(f"*(versio {user_version} → {current_version})*")
     lines.append("")
 

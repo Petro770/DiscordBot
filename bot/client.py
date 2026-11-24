@@ -61,7 +61,7 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
 
     @bot.event
     async def on_ready():
-        log.info("👽 BogosBinted online! %s", bot.user)
+        log.info("Discord-botti yhdistetty: %s", bot.user)
 
         try:
             await attachments.setup()

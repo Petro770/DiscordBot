@@ -68,8 +68,8 @@ RESPONSES = [
     "✍️ {name} kirjoitti. Tulostin luki.\nTulostin kirjoitti takaisin: paperi.\n({count} sivua.)",
 
     # --- Sotilas ---
-    "🪖 TULOSTUSOPERAATIO \"BOGOS\"\nKohde: tulostin\nKuvia: {count}\nTulos: onnistui\n{name}, etu on sinun.",
-    "🛸 Yksikkö BINTED raportoi: {count} kuvaa aineellistettu.\nKaharoita: 0\n{name}, tehtävä valmis.",
+    "🪖 TULOSTUSOPERAATIO\nKohde: tulostin\nKuvia: {count}\nTulos: onnistui\n{name}, etu on sinun.",
+    "🛸 Tulostusyksikkö raportoi: {count} kuvaa aineellistettu.\nKaharoita: 0\n{name}, tehtävä valmis.",
 
     # --- Myös ---
     "🛸 {name}, tulostus valmis.\nSeuraava viesti: ei ole. (Ehkä.)",
@@ -84,7 +84,7 @@ RESPONSES = [
     # --- Asiakaspalvelu-Botti ---
     "🤖 Hei {name}! Kiitos yhteydenotostasi Tulostin-Olennolle. Olemme käsitelleet {count} kuvaa. Arvioi kokemuksesi: 🛸/5.",
     "🔔 TÄRKEÄÄ: {name}, tulostimesi on valmis. Poistu jonosta. Älä katso suoraan valoon. {count} kpl.",
-    "💬 Chat-historiasi oli tyhjä, mutta tulostin {count} kuvaa silti. Koska *bogos*. {name}, ole hyvä.",
+    "💬 Chat-historiasi oli tyhjä, mutta tulostin {count} kuvaa silti. {name}, ole hyvä.",
 
     # --- Salaliitto ---
     "🛸 {name}, hallitus ei halua sinun tietävän tästä tulosteesta. {count} kuvaa piilotettu todellisuuteen.",
@@ -105,7 +105,7 @@ RESPONSES = [
 
     # --- Luonto & Biologia ---
     "🌲 Tulostin söi puun, antoi sinulle {count} kuvaa. Tasapeli. {name}, luonto kiittää (tai ei).",
-    "🧬 DNA-analyysi valmis: {name} koostuu 50% *bogos* ja 50% *binted*. {count} näytettä tulostettu.",
+    "🧬 DNA-analyysi valmis: {name} koostuu tulostusmusteesta ja paperipölystä. {count} näytettä tulostettu.",
 
     # --- Passiivis-Aggressiivinen ---
     "👽 {name}, olisit voinut vain katsoa niitä näytöltä. Mutta ei, {count} paperia tehty. Ole hyvä.",

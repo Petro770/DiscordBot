@@ -177,7 +177,7 @@ class BotManagerApp(QMainWindow):
 
     def _init_tray_icon(self) -> QSystemTrayIcon:
         icon_path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "static", "glorp.ico"
+            os.path.dirname(os.path.abspath(__file__)), "static", "bot.ico"
         )
         if os.path.exists(icon_path):
             return QSystemTrayIcon(QIcon(icon_path), self)
@@ -215,7 +215,7 @@ class BotManagerApp(QMainWindow):
         self.clipboard_checkbox.toggled.connect(self._clipboard_toggled)
         layout.addWidget(self.clipboard_checkbox)
         self.soundcloud_video_checkbox = QCheckBox("SoundCloud leikepöydälle MP4-videona")
-        self.settings = QSettings("BogosBinted", "DiscordBot")
+        self.settings = QSettings("DiscordBot", "Launcher")
         self.soundcloud_video_checkbox.setChecked(
             self.settings.value("clipboard/soundcloudVideo", True, type=bool)
         )

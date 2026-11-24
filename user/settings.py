@@ -244,14 +244,12 @@ async def handle_unohdaminut(message: discord.Message, bot: discord.Client | Non
             try:
                 if dm_removed > 0:
                     await message.channel.send(
-                        f"🛸 Valmis. {dm_removed} viestiä, asetukset ja jäljet poistettu. "
-                        f"Ei muista sinua enää. Bogos Binted.",
+                        f"🛸 Valmis. {dm_removed} viestiä, asetukset ja jäljet poistettu.",
                         silent=True,
                     )
                 else:
                     await message.channel.send(
-                        "🛸 Valmis. Kaikki jäljet poistettu. "
-                        "Ei muista sinua enää. Bogos Binted.",
+                        "🛸 Valmis. Tallennetut tietosi on poistettu.",
                         silent=True,
                     )
             except Exception:

@@ -68,7 +68,7 @@ def _print_windows(image: Image.Image, printer_name: str, title: str) -> str:
 def _print_windows_file(filepath: str, printer_name: str) -> str:
     image = load_image(filepath)
     try:
-        return _print_windows(image, printer_name, "Bogos Binted Print")
+        return _print_windows(image, printer_name, "DiscordBot Print")
     finally:
         image.close()
 
