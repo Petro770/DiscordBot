@@ -31,6 +31,15 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
     attachments = ChannelAttachments(bot, config.ATTACHMENT_INDEX_CHANNEL_IDS)
 
     ollama = OllamaReplies() if config.ENABLE_OLLAMA else None
+    log.info(
+        "Ollama: %s | OLLAMA_CHANNEL_IDS=%s (%s) | palvelimia=%s | mallit=%s | poissulut=%s",
+        "käytössä" if ollama else "pois käytöstä (ENABLE_OLLAMA)",
+        sorted(config.OLLAMA_CHANNEL_IDS),
+        config.OLLAMA_CHANNEL_SOURCE,
+        len(config.OLLAMA_HOSTS),
+        config.OLLAMA_MODELS or "automaattinen haku",
+        sorted(config.OLLAMA_EXCLUDED_MODELS),
+    )
 
     async def index_attachments(message: discord.Message):
         try:
@@ -53,7 +62,7 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
 
         names = [message.author.name]
         if message.guild:
-            gm = message.guild.get_member(message.author)
+            gm = message.guild.get_member(message.author.id)
             if gm and gm.display_name != message.author.name:
                 names.append(gm.display_name)
 

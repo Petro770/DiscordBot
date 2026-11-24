@@ -3,6 +3,7 @@ import asyncio
 import re
 from contextlib import AsyncExitStack
 from pathlib import Path
+from time import monotonic
 
 import aiohttp
 import discord
@@ -63,6 +64,7 @@ async def _generate(prompt: str, system_prompt: str) -> str | None:
         for host in config.OLLAMA_HOSTS:
             models = config.OLLAMA_MODELS
             if not models:
+                log.info("Ollama %s: haetaan mallilista", host)
                 try:
                     async with session.get(
                         f"{host}/api/tags", timeout=discovery_timeout,
@@ -76,12 +78,18 @@ async def _generate(prompt: str, system_prompt: str) -> str | None:
                         and not entry["name"].lower().split(":", 1)[0].endswith("-cloud")
                     )
                 except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError) as exc:
-                    log.warning("Ollama %s: mallien haku epäonnistui (%s)", host, type(exc).__name__)
+                    log.warning(
+                        "Ollama %s: mallien haku epäonnistui (%s, HTTP %s)",
+                        host, type(exc).__name__, getattr(exc, "status", "-"),
+                    )
                     continue
 
-            for model in models:
-                if model in config.OLLAMA_EXCLUDED_MODELS:
-                    continue
+            candidates = tuple(model for model in models if model not in config.OLLAMA_EXCLUDED_MODELS)
+            log.info("Ollama %s: kokeiltavat mallit=%s (ehdokkaita ennen poissulkuja=%s)",
+                     host, candidates, len(models))
+            for model in candidates:
+                started = monotonic()
+                log.info("Ollama %s / %s: lähetetään chat-pyyntö", host, model)
                 try:
                     async with session.post(
                         f"{host}/api/chat",
@@ -99,11 +107,14 @@ async def _generate(prompt: str, system_prompt: str) -> str | None:
                         data = await response.json()
                     answer = data["message"]["content"].strip()
                     if answer:
-                        log.info("Ollama-vastaus: %s / %s", host, model)
+                        log.info("Ollama %s / %s: vastaus saatu (%.1f s)", host, model, monotonic() - started)
                         return answer
                     log.warning("Ollama %s / %s: tyhjä vastaus", host, model)
                 except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError) as exc:
-                    log.warning("Ollama %s / %s: pyyntö epäonnistui (%s)", host, model, type(exc).__name__)
+                    log.warning(
+                        "Ollama %s / %s: pyyntö epäonnistui (%.1f s, %s, HTTP %s)",
+                        host, model, monotonic() - started, type(exc).__name__, getattr(exc, "status", "-"),
+                    )
     return None
 
 
@@ -115,11 +126,19 @@ class OllamaReplies:
     async def handle(self, message: discord.Message, bot_user_id: int):
         if message.author.bot:
             return
-        if message.guild and message.channel.id not in config.OLLAMA_CHANNEL_IDS:
-            return
         mention = re.compile(rf"<@!?{bot_user_id}>")
-        if not mention.search(message.content):
+        if not mention.search(message.content) and not any(user.id == bot_user_id for user in message.mentions):
             return
+
+        channel_id = message.channel.id
+        parent_id = getattr(message.channel, "parent_id", None)
+        if message.guild and not config.OLLAMA_CHANNEL_IDS.intersection((channel_id, parent_id)):
+            log.info(
+                "Ollama: maininta ohitettu | viesti=%s | kanava=%s | yläkanava=%s | sallitut=%s",
+                message.id, channel_id, parent_id, sorted(config.OLLAMA_CHANNEL_IDS),
+            )
+            return
+        log.info("Ollama: maininta hyväksytty | viesti=%s | kanava=%s", message.id, channel_id)
         prompt = mention.sub("", message.content).strip()
 
         if not prompt:
@@ -144,6 +163,7 @@ class OllamaReplies:
                     )
                     answer = None
             if not answer:
+                log.warning("Ollama: viesti %s jäi ilman mallin vastausta", message.id)
                 answer = "Ollama ei saanut tällä kertaa muodostettua vastausta."
 
         encoded = answer.encode("utf-16-le")
@@ -153,5 +173,10 @@ class OllamaReplies:
             await message.reply(
                 answer, mention_author=False, allowed_mentions=discord.AllowedMentions.none()
             )
-        except discord.HTTPException:
-            log.warning("Ollama: vastausta viestiin %s ei saatu lähetettyä", message.id)
+        except discord.HTTPException as exc:
+            log.warning(
+                "Ollama: vastausta ei saatu lähetettyä | viesti=%s | kanava=%s | HTTP=%s | Discord=%s",
+                message.id, channel_id, exc.status, exc.code,
+            )
+        else:
+            log.info("Ollama: vastaus lähetetty | viesti=%s | kanava=%s", message.id, channel_id)

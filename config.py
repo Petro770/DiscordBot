@@ -97,9 +97,11 @@ OLLAMA_MODELS = tuple(model for model in _ollama_model_entries if not model.star
 OLLAMA_EXCLUDED_MODELS = frozenset(
     model[1:].strip() for model in _ollama_model_entries if model.startswith("!")
 )
+_ollama_channel_ids = os.getenv("OLLAMA_CHANNEL_IDS")
+OLLAMA_CHANNEL_SOURCE = "TARGET_CHANNEL_ID" if _ollama_channel_ids is None else "OLLAMA_CHANNEL_IDS"
 OLLAMA_CHANNEL_IDS = frozenset(
     int(channel_id.strip())
-    for channel_id in os.getenv("OLLAMA_CHANNEL_IDS", _raw).split(",")
+    for channel_id in (_raw if _ollama_channel_ids is None else _ollama_channel_ids).split(",")
     if channel_id.strip()
 )
 

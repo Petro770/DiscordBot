@@ -50,6 +50,12 @@ Kokeile Discordissa esimerkiksi `@Botti Miksi taivas on sininen?`.
 Botti vastaa suoraan viestiin yksityisviesteissä ja sallituilla palvelinkanavilla.
 Oletuksena sallittu kanava on `TARGET_CHANNEL_ID`. Voit antaa useita
 kanavatunnisteita pilkulla eroteltuina asetuksessa `OLLAMA_CHANNEL_IDS`.
+Sallittu yläkanava sallii myös sen ketjut ja foorumipostaukset.
+Tyhjä `OLLAMA_CHANNEL_IDS=` sallii vain yksityisviestit. Jos rivi puuttuu,
+käytetään `TARGET_CHANNEL_ID`-asetusta. Käynnistä botti uudelleen muutosten jälkeen.
+Käynnistysloki näyttää käytössä olevan kanavalistan ja sen lähteen. Maininnoista
+loki kertoo, hyväksyttiinkö viesti, mitä palvelimia ja malleja kokeiltiin ja
+saatiinko vastaus lähetettyä Discordiin.
 
 `OLLAMA_HOSTS` sisältää palvelinten osoitteet kokeilujärjestyksessä.
 Oletusosoitteet ovat `192.168.1.11`, `192.168.1.12` ja `192.168.1.13`
