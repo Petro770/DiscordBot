@@ -1,6 +1,7 @@
 """Ollama replies to direct Discord mentions."""
 import asyncio
 import re
+from contextlib import AsyncExitStack
 
 import aiohttp
 import discord
@@ -73,7 +74,11 @@ class OllamaReplies:
         elif self._request.locked():
             answer = "Vastaan parhaillaan toiseen kysymykseen. Kokeile hetken päästä uudelleen."
         else:
-            async with self._request:
+            async with self._request, AsyncExitStack() as typing:
+                try:
+                    await typing.enter_async_context(message.channel.typing())
+                except discord.HTTPException:
+                    log.warning("Ollama: kirjoitusilmaisinta ei saatu näytettyä kanavalla %s", message.channel.id)
                 try:
                     answer = await asyncio.wait_for(_generate(prompt), timeout=120)
                 except asyncio.TimeoutError:
