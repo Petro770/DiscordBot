@@ -69,7 +69,16 @@ Ilman huutomerkkiä annetut nimet muodostavat kokeilulistan. Jos sama nimi
 on sekä kokeilulistalla että poissuljettu, poissulku voittaa. Botti käyttää
 ensimmäistä onnistunutta vastausta. Lokista näkee vastanneen palvelimen ja mallin.
 
-Botti lähettää Ollamalle botin ohjeet ja mainintaviestin tekstin ilman omaa mainintaansa.
+Botti lähettää Ollamalle ohjeet, mainintaviestin tekstin ja
+tunnistettujen henkilöiden näyttönimet ja roolit. Se tunnistaa kirjoittajan,
+enintään 12 Discordin ilmoittamaa mainintaa ja samassa kanavassa vastatun
+viestin kirjoittajan. Maininnat välitetään mallille viitteinä, jotka botti
+muuntaa vastauksessa Discord-maininnoiksi ilman pingiä. Aiempien viestien
+sisältöä ei lähetetä Ollamalle.
+
+Kokeile esimerkiksi `@Botti sano @Käyttäjä että aloitetaan kahdeksalta`
+tai vastaa henkilön viestiin tekstillä `@Botti kerro hänelle että aloitetaan
+kahdeksalta`.
 Vapaat Ollama-palvelimet käsittelevät kysymyksiä rinnakkain, enintään yksi
 kysymys palvelinta kohti. Botti lähettää vastaukset saapumisjärjestyksessä
 kullakin Discord-kanavalla ja yksityisviestikeskustelussa. Botti voi pitää

@@ -9,6 +9,7 @@ import aiohttp
 import discord
 
 import config
+from bot.ollama_people import PEOPLE_INSTRUCTIONS, prepare_people, render_people
 from core.logging import log
 
 
@@ -158,7 +159,7 @@ class OllamaReplies:
         self._workers = asyncio.Semaphore(max(1, len(self._hosts.hosts)))
         self._pending = 0
         self._reply_tails: dict[int, asyncio.Future] = {}
-        self._system_prompt = _system_prompt()
+        self._system_prompt = _system_prompt() + "\n\n" + PEOPLE_INSTRUCTIONS
 
     async def handle(self, message: discord.Message, bot_user_id: int):
         if message.author.bot:
@@ -201,7 +202,7 @@ class OllamaReplies:
         try:
             if prompt:
                 async with self._workers:
-                    answer = await self._answer(message, prompt)
+                    answer = await self._answer(message, prompt, bot_user_id)
             else:
                 answer = "Kirjoita kysymys samaan viestiin maininnan kanssa."
             if previous is not None:
@@ -214,16 +215,17 @@ class OllamaReplies:
             else:
                 finish_turn()
 
-    async def _answer(self, message: discord.Message, prompt: str) -> str:
+    async def _answer(self, message: discord.Message, prompt: str, bot_user_id: int) -> str:
         log.info("Ollama: käsittely alkaa | viesti=%s", message.id)
         async with AsyncExitStack() as typing:
             try:
                 await typing.enter_async_context(message.channel.typing())
             except discord.HTTPException:
                 log.warning("Ollama: kirjoitusilmaisinta ei saatu näytettyä kanavalla %s", message.channel.id)
+            payload, mentions = await prepare_people(message, prompt, bot_user_id)
             try:
                 answer = await asyncio.wait_for(
-                    _generate(prompt, self._system_prompt, self._hosts),
+                    _generate(payload, self._system_prompt, self._hosts),
                     timeout=config.OLLAMA_TOTAL_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
@@ -235,7 +237,7 @@ class OllamaReplies:
         if not answer:
             log.warning("Ollama: viesti %s jäi ilman mallin vastausta", message.id)
             return "Ollama ei saanut tällä kertaa muodostettua vastausta."
-        return answer
+        return render_people(answer, mentions)
 
     async def _reply(self, message: discord.Message, answer: str):
         channel_id = message.channel.id
