@@ -80,6 +80,8 @@ async def _generate(prompt: str, system_prompt: str) -> str | None:
                     continue
 
             for model in models:
+                if model in config.OLLAMA_EXCLUDED_MODELS:
+                    continue
                 try:
                     async with session.post(
                         f"{host}/api/chat",

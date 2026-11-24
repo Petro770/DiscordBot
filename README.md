@@ -53,11 +53,15 @@ kanavatunnisteita pilkulla eroteltuina asetuksessa `OLLAMA_CHANNEL_IDS`.
 
 `OLLAMA_HOSTS` sisältää palvelinten osoitteet kokeilujärjestyksessä.
 Oletusosoitteet ovat `192.168.1.11`, `192.168.1.12` ja `192.168.1.13`
-portissa `11434`. Tyhjällä `OLLAMA_MODELS`-asetuksella botti hakee
-asennetut mallit kultakin palvelimelta. Halutessasi anna pilkulla erotettu
-lista tarkoista paikallisista mallinimistä. Botti kokeilee listaa kullekin
-palvelimelle ja käyttää ensimmäistä onnistunutta vastausta. Lokista näkee
-vastanneen palvelimen ja mallin.
+portissa `11434`. Botti hakee asennetut mallit kultakin palvelimelta,
+kun `OLLAMA_MODELS` on tyhjä tai sisältää vain huutomerkillä merkittyjä
+poissulkuja. Esimerkiksi `OLLAMA_MODELS=!qwen3:4b,!toinen-malli:latest`
+ohittaa nämä mallit kaikilla palvelimilla. Käytä tarkkoja mallinimiä
+tageineen sellaisina kuin Ollama ilmoittaa ne.
+
+Ilman huutomerkkiä annetut nimet muodostavat kokeilulistan. Jos sama nimi
+on sekä kokeilulistalla että poissuljettu, poissulku voittaa. Botti käyttää
+ensimmäistä onnistunutta vastausta. Lokista näkee vastanneen palvelimen ja mallin.
 
 Botti lähettää Ollamalle botin ohjeet ja mainintaviestin tekstin ilman omaa mainintaansa.
 Se käsittelee yhden Ollama-kysymyksen kerrallaan. Botin koneen pitää päästä
@@ -74,7 +78,7 @@ Aseta aikarajat `.env`-tiedostossa sekunteina ja käynnistä botti uudelleen.
 | Asetus | Oletus | Vaikutus |
 | --- | ---: | --- |
 | `OLLAMA_CONNECT_TIMEOUT_SECONDS` | 3 | Yhteyden avaaminen chat-pyynnössä. |
-| `OLLAMA_DISCOVERY_TIMEOUT_SECONDS` | 5 | Yhden palvelimen mallilistan haku yhteyden avauksineen. Käytössä, kun `OLLAMA_MODELS` on tyhjä. |
+| `OLLAMA_DISCOVERY_TIMEOUT_SECONDS` | 5 | Yhden palvelimen mallilistan haku yhteyden avauksineen. Käytössä automaattisessa mallihaussa. |
 | `OLLAMA_MODEL_TIMEOUT_SECONDS` | 40 | Yksi chat-pyyntö yhteyden avauksesta valmiiseen vastaukseen. |
 | `OLLAMA_TOTAL_TIMEOUT_SECONDS` | 120 | Koko Ollama-kierros, mallilistojen haut ja varayritykset mukaan lukien. |
 

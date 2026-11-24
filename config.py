@@ -90,8 +90,12 @@ OLLAMA_HOSTS = tuple(
     ).split(",")
     if host.strip()
 )
-OLLAMA_MODELS = tuple(
+_ollama_model_entries = tuple(
     model.strip() for model in os.getenv("OLLAMA_MODELS", "").split(",") if model.strip()
+)
+OLLAMA_MODELS = tuple(model for model in _ollama_model_entries if not model.startswith("!"))
+OLLAMA_EXCLUDED_MODELS = frozenset(
+    model[1:].strip() for model in _ollama_model_entries if model.startswith("!")
 )
 OLLAMA_CHANNEL_IDS = frozenset(
     int(channel_id.strip())
