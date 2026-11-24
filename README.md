@@ -115,6 +115,13 @@ Discord-toiminnoista. Kokeile esimerkiksi `@Botti mitä osaat?` tai
 Botti saa lisäksi tiedon käytössä olevista medialatauspalveluista,
 kuvatulostuksesta ja liiteindeksoinnista.
 
+Botti voi leikkisässä keskustelussa lisätä istunnon ohjeisiin esimerkiksi
+kuivahuumoria tai avaruusvertauksia. Enintään kaksi viimeisintä tyylilisäystä
+säilyy kanavan tai yksityisviestikeskustelun muistissa käynnissä olevan
+bottiprosessin ajan. Lisäykset vaikuttavat päivityksen jälkeen muodostettaviin
+vastauksiin. Botti valitsee valmiista tyyleistä ja säilyttää pysyvän
+ohjetiedoston ennallaan.
+
 Jos haluat omat ohjeet, kopioi oletusohje UTF-8-tiedostoksi, muokkaa
 sitä ja aseta `OLLAMA_INSTRUCTIONS_FILE=instructions/local.md` tiedostoon
 `.env`. Suhteellinen polku alkaa projektikansiosta. Käynnistä botti uudelleen

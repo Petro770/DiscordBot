@@ -10,6 +10,7 @@ import discord
 
 import config
 from bot.ollama_people import PEOPLE_INSTRUCTIONS, prepare_people, render_people
+from bot.ollama_style import STYLE_INSTRUCTIONS, SessionStyles, split_style
 from core.logging import log
 
 
@@ -159,7 +160,8 @@ class OllamaReplies:
         self._workers = asyncio.Semaphore(max(1, len(self._hosts.hosts)))
         self._pending = 0
         self._reply_tails: dict[int, asyncio.Future] = {}
-        self._system_prompt = _system_prompt() + "\n\n" + PEOPLE_INSTRUCTIONS
+        self._styles = SessionStyles()
+        self._system_prompt = "\n\n".join((_system_prompt(), PEOPLE_INSTRUCTIONS, STYLE_INSTRUCTIONS))
 
     async def handle(self, message: discord.Message, bot_user_id: int):
         if message.author.bot:
@@ -200,14 +202,17 @@ class OllamaReplies:
                 del self._reply_tails[channel_id]
 
         try:
+            style = None
             if prompt:
                 async with self._workers:
-                    answer = await self._answer(message, prompt, bot_user_id)
+                    answer, style = await self._answer(message, prompt, bot_user_id)
             else:
                 answer = "Kirjoita kysymys samaan viestiin maininnan kanssa."
             if previous is not None:
                 await asyncio.shield(previous)
-            await self._reply(message, answer)
+            if await self._reply(message, answer) and style:
+                self._styles.remember(channel_id, style)
+                log.info("Ollama: istunnon tyyli päivitetty | kanava=%s | tyyli=%s", channel_id, style)
         finally:
             self._pending -= 1
             if previous is not None and not previous.done():
@@ -215,7 +220,9 @@ class OllamaReplies:
             else:
                 finish_turn()
 
-    async def _answer(self, message: discord.Message, prompt: str, bot_user_id: int) -> str:
+    async def _answer(
+        self, message: discord.Message, prompt: str, bot_user_id: int,
+    ) -> tuple[str, str | None]:
         log.info("Ollama: käsittely alkaa | viesti=%s", message.id)
         async with AsyncExitStack() as typing:
             try:
@@ -223,9 +230,13 @@ class OllamaReplies:
             except discord.HTTPException:
                 log.warning("Ollama: kirjoitusilmaisinta ei saatu näytettyä kanavalla %s", message.channel.id)
             payload, mentions = await prepare_people(message, prompt, bot_user_id)
+            system_prompt = self._system_prompt
+            additions = self._styles.instructions(message.channel.id)
+            if additions:
+                system_prompt += "\n\n# Istunnon tyyli\n" + additions
             try:
                 answer = await asyncio.wait_for(
-                    _generate(payload, self._system_prompt, self._hosts),
+                    _generate(payload, system_prompt, self._hosts),
                     timeout=config.OLLAMA_TOTAL_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
@@ -234,12 +245,13 @@ class OllamaReplies:
                     config.OLLAMA_TOTAL_TIMEOUT_SECONDS, message.id,
                 )
                 answer = None
+        answer, style = split_style(answer or "")
         if not answer:
             log.warning("Ollama: viesti %s jäi ilman mallin vastausta", message.id)
-            return "Ollama ei saanut tällä kertaa muodostettua vastausta."
-        return render_people(answer, mentions)
+            return "Ollama ei saanut tällä kertaa muodostettua vastausta.", None
+        return render_people(answer, mentions), style
 
-    async def _reply(self, message: discord.Message, answer: str):
+    async def _reply(self, message: discord.Message, answer: str) -> bool:
         channel_id = message.channel.id
         encoded = answer.encode("utf-16-le")
         if len(encoded) > 4000:
@@ -253,5 +265,6 @@ class OllamaReplies:
                 "Ollama: vastausta ei saatu lähetettyä | viesti=%s | kanava=%s | HTTP=%s | Discord=%s",
                 message.id, channel_id, exc.status, exc.code,
             )
-        else:
-            log.info("Ollama: vastaus lähetetty | viesti=%s | kanava=%s", message.id, channel_id)
+            return False
+        log.info("Ollama: vastaus lähetetty | viesti=%s | kanava=%s", message.id, channel_id)
+        return True
