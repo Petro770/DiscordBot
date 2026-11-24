@@ -12,6 +12,7 @@
 
 # Lokit ja FFmpegin väliaikaistiedostot
 *.log
+/core/ollama_trace.jsonl*
 ffmpeg2pass-*.log.mbtree
 
 # Python ja editorit

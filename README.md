@@ -92,6 +92,20 @@ esimerkiksi PowerShellissä komennolla
 Jos Ollama kuuntelee vain paikallisia yhteyksiä, määritä palvelimella
 `OLLAMA_HOST` kuuntelemaan lähiverkon osoitetta.
 
+### Ollaman jäljitysloki
+
+Aseta `OLLAMA_TRACE_ENABLED=true` tiedostoon `.env` ja käynnistä botti
+uudelleen. Toista ongelma ja etsi `core/ollama_trace.jsonl`-tiedostosta
+saman `message_id`-tunnisteen rivit. Niissä näkyvät tägäys, mallille annettu
+tekstisyöte ja istuntomuisti, mallivalinta, raaka vastausteksti, jäsennetty
+vastaus ja Discordiin lähetetty teksti. Kuvadataa ei tallenneta.
+Jäljitys kattaa Ollama-vastaukset sallituissa kanavissa ja yksityisviesteissä.
+
+Tiedosto kiertää noin 2 Mt:n välein ja säilyttää kaksi edellistä tiedostoa.
+Vaihda asetus takaisin arvoon `false` ja käynnistä botti uudelleen, kun
+testi on valmis. Vanhat tiedostot voi poistaa käsin. Tarkista ja peitä
+yksityiset viestit, nimet ja tunnisteet ennen jäljitysrivien jakamista.
+
 ### Kuvien tulkinta
 
 Liitä kuva samaan viestiin botin maininnan kanssa, esimerkiksi

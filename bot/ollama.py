@@ -12,6 +12,7 @@ import discord
 import config
 from bot.ollama_people import PEOPLE_INSTRUCTIONS, prepare_people, render_people
 from bot.ollama_style import STYLE_INSTRUCTIONS, SessionMemory, split_style
+from bot.ollama_trace import setup_trace, trace
 from core.logging import log
 
 
@@ -108,7 +109,7 @@ class OllamaHosts:
 
 async def _generate_on_host(
     session: aiohttp.ClientSession, discovery_timeout: aiohttp.ClientTimeout,
-    host: str, prompt: str, system_prompt: str, image: str | None,
+    host: str, prompt: str, system_prompt: str, image: str | None, message_id: int | None,
 ) -> tuple[str | None, int]:
     models = config.OLLAMA_MODELS
     if not models:
@@ -147,6 +148,7 @@ async def _generate_on_host(
         attempts += 1
         started = monotonic()
         log.info("Ollama %s / %s: lähetetään chat-pyyntö", host, model)
+        trace("model_attempt", message_id, host=host, model=model)
         try:
             async with session.post(
                 f"{host}/api/chat",
@@ -162,7 +164,10 @@ async def _generate_on_host(
                 allow_redirects=False,
             ) as response:
                 data = await response.json()
-            answer = data["message"]["content"].strip()
+            raw_answer = data["message"]["content"]
+            trace("model_response", message_id, host=host, model=model, content=raw_answer,
+                  done_reason=data.get("done_reason"), elapsed_seconds=round(monotonic() - started, 3))
+            answer = raw_answer.strip()
             if answer:
                 log.info("Ollama %s / %s: vastaus saatu (%.1f s)", host, model, monotonic() - started)
                 return answer, attempts
@@ -172,6 +177,8 @@ async def _generate_on_host(
                 "Ollama %s / %s: pyyntö epäonnistui (%.1f s, %s, HTTP %s)",
                 host, model, monotonic() - started, type(exc).__name__, getattr(exc, "status", "-"),
             )
+            trace("model_error", message_id, host=host, model=model, error=type(exc).__name__,
+                  status=getattr(exc, "status", None), elapsed_seconds=round(monotonic() - started, 3))
 
     return None, attempts
 
@@ -193,7 +200,7 @@ async def _generate(
             async with hosts.reserve(remaining) as host:
                 remaining.remove(host)
                 answer, host_attempts = await _generate_on_host(
-                    session, discovery_timeout, host, prompt, system_prompt, image,
+                    session, discovery_timeout, host, prompt, system_prompt, image, message_id,
                 )
                 attempts += host_attempts
                 if answer:
@@ -213,6 +220,7 @@ async def _generate(
 
 class OllamaReplies:
     def __init__(self):
+        setup_trace()
         self._hosts = OllamaHosts(config.OLLAMA_HOSTS)
         self._workers = asyncio.Semaphore(max(1, len(self._hosts.hosts)))
         self._pending = 0
@@ -239,6 +247,8 @@ class OllamaReplies:
             )
             return
         log.info("Ollama: maininta hyväksytty | viesti=%s | kanava=%s", message.id, channel_id)
+        trace("discord_input", message.id, channel_id=channel_id, content=message.content,
+              attachment_count=len(message.attachments))
         prompt = mention.sub("", message.content).strip()
         images = [attachment for attachment in message.attachments if _is_image(attachment)]
         image = next((attachment for attachment in images if attachment.size <= _MAX_IMAGE_BYTES), None)
@@ -256,6 +266,7 @@ class OllamaReplies:
                 await message.add_reaction("🚫")
             except discord.HTTPException:
                 log.warning("Ollama: täyden jonon reaktiota ei saatu lisättyä | viesti=%s", message.id)
+            trace("queue_full", message.id, channel_id=channel_id)
             return
 
         previous = self._reply_tails.get(channel_id)
@@ -323,6 +334,8 @@ class OllamaReplies:
 
             payload, mentions = await prepare_people(message, prompt, bot_user_id)
             context = self._memory.add_context(message.channel.id, payload)
+            trace("model_input", message.id, system=self._system_prompt, user=context,
+                  has_image=image_data is not None)
             try:
                 answer = await asyncio.wait_for(
                     _generate(context, self._system_prompt, self._hosts, image_data, message_id=message.id),
@@ -333,6 +346,7 @@ class OllamaReplies:
                     "Ollama: vastaamisen kokonaisaika (%g s) ylittyi | viesti=%s | kuvapyyntö=%s",
                     config.OLLAMA_TOTAL_TIMEOUT_SECONDS, message.id, image is not None,
                 )
+                trace("model_timeout", message.id, timeout_seconds=config.OLLAMA_TOTAL_TIMEOUT_SECONDS)
                 answer = None
         answer, style = split_style(answer or "")
         if not answer:
@@ -340,7 +354,9 @@ class OllamaReplies:
             if image is not None:
                 return "Ollama ei saanut tulkittua kuvaa. Tarkista lokista, löytyikö kuvaa tukeva malli.", None, None
             return "Ollama ei saanut tällä kertaa muodostettua vastausta.", None, None
-        return render_people(answer, mentions), style, payload
+        rendered = render_people(answer, mentions)
+        trace("parsed_response", message.id, content=rendered, style=style)
+        return rendered, style, payload
 
     async def _reply(self, message: discord.Message, answer: str) -> bool:
         channel_id = message.channel.id
@@ -348,7 +364,7 @@ class OllamaReplies:
         if len(encoded) > 4000:
             answer = encoded[:3998].decode("utf-16-le", errors="ignore").rstrip() + "…"
         try:
-            await message.reply(
+            sent = await message.reply(
                 answer, mention_author=False, allowed_mentions=discord.AllowedMentions.none()
             )
         except discord.HTTPException as exc:
@@ -356,6 +372,9 @@ class OllamaReplies:
                 "Ollama: vastausta ei saatu lähetettyä | viesti=%s | kanava=%s | HTTP=%s | Discord=%s",
                 message.id, channel_id, exc.status, exc.code,
             )
+            trace("discord_send_error", message.id, channel_id=channel_id,
+                  status=exc.status, code=exc.code, content=answer)
             return False
+        trace("discord_output", message.id, channel_id=channel_id, reply_id=sent.id, content=answer)
         log.info("Ollama: vastaus lähetetty | viesti=%s | kanava=%s", message.id, channel_id)
         return True
