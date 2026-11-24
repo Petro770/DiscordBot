@@ -132,7 +132,7 @@ class OllamaHosts:
 async def _generate_on_host(
     session: aiohttp.ClientSession, discovery_timeout: aiohttp.ClientTimeout,
     hosts: OllamaHosts, host: str, prompt: str, system_prompt: str, image: str | None,
-    message_id: int | None, preferred_model: str | None,
+    message_id: int | None, preferred_model: str | None, history: list[dict[str, str]],
 ) -> tuple[str | None, str | None, int]:
     models = config.OLLAMA_MODELS
     if not models:
@@ -186,6 +186,7 @@ async def _generate_on_host(
                     "model": model,
                     "messages": [
                         {"role": "system", "content": system_prompt},
+                        *history,
                         user_message,
                     ],
                     "stream": False,
@@ -224,6 +225,7 @@ async def _generate_on_host(
 async def _generate(
     prompt: str, system_prompt: str, hosts: OllamaHosts, image: str | None = None, *,
     message_id: int | None = None, preferred: tuple[str, str] | None = None,
+    history: list[dict[str, str]] | None = None,
 ) -> tuple[str, tuple[str, str]] | None:
     timeout = aiohttp.ClientTimeout(
         total=config.OLLAMA_MODEL_TIMEOUT_SECONDS,
@@ -242,7 +244,7 @@ async def _generate(
                 remaining.remove(host)
                 answer, model, host_attempts = await _generate_on_host(
                     session, discovery_timeout, hosts, host, prompt, system_prompt, image,
-                    message_id, preferred_model if host == preferred_host else None,
+                    message_id, preferred_model if host == preferred_host else None, history or [],
                 )
                 attempts += host_attempts
                 if answer and model:
@@ -376,13 +378,14 @@ class OllamaReplies:
 
             payload, mentions = await prepare_people(message, prompt, bot_user_id)
             context = self._memory.add_context(message.channel.id, payload)
+            history = self._memory.chat_history(message.channel.id)
             trace("model_input", message.id, system=self._system_prompt, user=context,
-                  has_image=image_data is not None)
+                  has_image=image_data is not None, history=history)
             preferred = self._memory.text_target(message.channel.id) if image is None else None
             try:
                 result = await asyncio.wait_for(
                     _generate(context, self._system_prompt, self._hosts, image_data,
-                              message_id=message.id, preferred=preferred),
+                              message_id=message.id, preferred=preferred, history=history),
                     timeout=config.OLLAMA_TOTAL_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:

@@ -150,7 +150,8 @@ kuvatulostuksesta ja liiteindeksoinnista.
 Ollama voi muotoilla keskusteluun sopivan lyhyen tyyliohjeen samalla,
 kun se vastaa. Botti säilyttää kanavaa tai yksityisviestikeskustelua kohti
 uusimman tyyliohjeen ja lyhyet katkelmat kolmesta viimeisestä onnistuneesta
-AI-vuorosta. Katkelmat auttavat jatkokysymyksissä. Muisti tyhjenee, kun botti
+AI-vuorosta. Botti lähettää katkelmat Ollamalle erillisinä käyttäjän ja
+avustajan viesteinä, jotta malli voi jatkaa keskustelua. Muisti tyhjenee, kun botti
 käynnistetään uudelleen.
 
 Kirjoita Discordissa `/ai-tyyli`, niin botti näyttää kanavalla juuri tämän
