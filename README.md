@@ -73,15 +73,16 @@ Botti lähettää Ollamalle ohjeet, mainintaviestin tekstin ja
 tunnistettujen henkilöiden näyttönimet ja roolit. Se tunnistaa kirjoittajan,
 enintään 12 Discordin ilmoittamaa mainintaa ja samassa kanavassa vastatun
 viestin kirjoittajan. Maininnat välitetään mallille viitteinä, jotka botti
-muuntaa vastauksessa Discord-maininnoiksi ilman pingiä. Aiempien viestien
-sisältöä ei lähetetä Ollamalle.
+muuntaa vastauksessa Discord-maininnoiksi ilman pingiä. Mukaan voi tulla lyhyitä katkelmia aiemmista Ollama-vuoroista
+samassa keskustelussa.
 
 Kokeile esimerkiksi `@Botti sano @Käyttäjä että aloitetaan kahdeksalta`
 tai vastaa henkilön viestiin tekstillä `@Botti kerro hänelle että aloitetaan
 kahdeksalta`.
 Vapaat Ollama-palvelimet käsittelevät kysymyksiä rinnakkain, enintään yksi
-kysymys palvelinta kohti. Botti lähettää vastaukset saapumisjärjestyksessä
-kullakin Discord-kanavalla ja yksityisviestikeskustelussa. Botti voi pitää
+kysymys palvelinta kohti. Saman kanavan tai yksityisviestikeskustelun
+vuorot käsitellään saapumisjärjestyksessä, jotta seuraava vastaus saa
+käyttöönsä edellisen vuoron. Botti voi pitää
 käsittelypaikkojen lisäksi enintään 20 viestiä jonossa tai odottamassa omaa
 vastausvuoroaan. Täyden jonon merkkinä botti reagoi uuteen viestiin 🚫.
 Kokonaisaika alkaa viestin päästessä käsittelyyn. Botin koneen pitää päästä
@@ -115,12 +116,11 @@ Discord-toiminnoista. Kokeile esimerkiksi `@Botti mitä osaat?` tai
 Botti saa lisäksi tiedon käytössä olevista medialatauspalveluista,
 kuvatulostuksesta ja liiteindeksoinnista.
 
-Botti voi leikkisässä keskustelussa lisätä istunnon ohjeisiin esimerkiksi
-kuivahuumoria tai avaruusvertauksia. Enintään kaksi viimeisintä tyylilisäystä
-säilyy kanavan tai yksityisviestikeskustelun muistissa käynnissä olevan
-bottiprosessin ajan. Lisäykset vaikuttavat päivityksen jälkeen muodostettaviin
-vastauksiin. Botti valitsee valmiista tyyleistä ja säilyttää pysyvän
-ohjetiedoston ennallaan.
+Ollama voi muotoilla keskusteluun sopivan lyhyen tyyliohjeen samalla,
+kun se vastaa. Botti säilyttää kanavaa tai yksityisviestikeskustelua kohti
+uusimman tyyliohjeen ja lyhyet katkelmat kolmesta viimeisestä onnistuneesta
+AI-vuorosta. Katkelmat auttavat jatkokysymyksissä. Muisti tyhjenee, kun botti
+käynnistetään uudelleen.
 
 Kirjoita Discordissa `/ai-tyyli`, niin botti näyttää kanavalla juuri tämän
 keskustelun aktiiviset tyyliohjeet. Komento lukee ne suoraan botin muistista.

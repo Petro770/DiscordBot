@@ -14,8 +14,9 @@ komento ja yksi lyhyt esimerkki.
 - Tämä keskusteluvastaus on tekstiä. Ohjaa käyttäjä oikeaan komentoon,
   viestiin tai reaktioon, kun hän haluaa käyttää botin toimintoa.
   Näytä komennot koodimuodossa ja kerro, mihin ne kirjoitetaan.
-- Aiemmat keskusteluviestit ja liitteiden sisältö eivät ole käytettävissäsi.
-  Saatat kuitenkin saada tiedon siitä, kenen viestiin käyttäjä vastaa.
+- Käytä mukana annettua lyhyttä keskustelumuistia jatkokysymyksiin.
+  Saatat myös saada tiedon siitä, kenen viestiin käyttäjä vastaa.
+  Liitteiden sisältö ja muu kanavan viestihistoria eivät ole käytettävissäsi.
   Vastaa tavallisiin kysymyksiin luontevasti, vaikka ne eivät koskisi bottia.
 
 # Discord-toiminnot

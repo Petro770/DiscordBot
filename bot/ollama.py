@@ -10,7 +10,7 @@ import discord
 
 import config
 from bot.ollama_people import PEOPLE_INSTRUCTIONS, prepare_people, render_people
-from bot.ollama_style import STYLE_INSTRUCTIONS, SessionStyles, split_style
+from bot.ollama_style import STYLE_INSTRUCTIONS, SessionMemory, split_style
 from core.logging import log
 
 
@@ -160,11 +160,11 @@ class OllamaReplies:
         self._workers = asyncio.Semaphore(max(1, len(self._hosts.hosts)))
         self._pending = 0
         self._reply_tails: dict[int, asyncio.Future] = {}
-        self._styles = SessionStyles()
+        self._memory = SessionMemory()
         self._system_prompt = "\n\n".join((_system_prompt(), PEOPLE_INSTRUCTIONS, STYLE_INSTRUCTIONS))
 
     def session_style(self, channel_id: int | None) -> str:
-        return self._styles.instructions(channel_id) if channel_id is not None else ""
+        return self._memory.style(channel_id) if channel_id is not None else ""
 
     async def handle(self, message: discord.Message, bot_user_id: int):
         if message.author.bot:
@@ -205,17 +205,19 @@ class OllamaReplies:
                 del self._reply_tails[channel_id]
 
         try:
-            style = None
-            if prompt:
-                async with self._workers:
-                    answer, style = await self._answer(message, prompt, bot_user_id)
-            else:
-                answer = "Kirjoita kysymys samaan viestiin maininnan kanssa."
+            # Read context after the preceding turn has been sent and recorded.
             if previous is not None:
                 await asyncio.shield(previous)
-            if await self._reply(message, answer) and style:
-                self._styles.remember(channel_id, style)
-                log.info("Ollama: istunnon tyyli päivitetty | kanava=%s | tyyli=%s", channel_id, style)
+            payload = style = None
+            if prompt:
+                async with self._workers:
+                    answer, style, payload = await self._answer(message, prompt, bot_user_id)
+            else:
+                answer = "Kirjoita kysymys samaan viestiin maininnan kanssa."
+            if await self._reply(message, answer) and payload is not None:
+                self._memory.remember(channel_id, payload, answer, style)
+                if style:
+                    log.info("Ollama: istunnon tyyli päivitetty | kanava=%s", channel_id)
         finally:
             self._pending -= 1
             if previous is not None and not previous.done():
@@ -225,7 +227,7 @@ class OllamaReplies:
 
     async def _answer(
         self, message: discord.Message, prompt: str, bot_user_id: int,
-    ) -> tuple[str, str | None]:
+    ) -> tuple[str, str | None, str | None]:
         log.info("Ollama: käsittely alkaa | viesti=%s", message.id)
         async with AsyncExitStack() as typing:
             try:
@@ -233,13 +235,10 @@ class OllamaReplies:
             except discord.HTTPException:
                 log.warning("Ollama: kirjoitusilmaisinta ei saatu näytettyä kanavalla %s", message.channel.id)
             payload, mentions = await prepare_people(message, prompt, bot_user_id)
-            system_prompt = self._system_prompt
-            additions = self._styles.instructions(message.channel.id)
-            if additions:
-                system_prompt += "\n\n# Istunnon tyyli\n" + additions
+            context = self._memory.add_context(message.channel.id, payload)
             try:
                 answer = await asyncio.wait_for(
-                    _generate(payload, system_prompt, self._hosts),
+                    _generate(context, self._system_prompt, self._hosts),
                     timeout=config.OLLAMA_TOTAL_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
@@ -251,8 +250,8 @@ class OllamaReplies:
         answer, style = split_style(answer or "")
         if not answer:
             log.warning("Ollama: viesti %s jäi ilman mallin vastausta", message.id)
-            return "Ollama ei saanut tällä kertaa muodostettua vastausta.", None
-        return render_people(answer, mentions), style
+            return "Ollama ei saanut tällä kertaa muodostettua vastausta.", None, None
+        return render_people(answer, mentions), style, payload
 
     async def _reply(self, message: discord.Message, answer: str) -> bool:
         channel_id = message.channel.id

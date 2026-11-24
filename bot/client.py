@@ -48,7 +48,7 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
         else:
             style = ollama.session_style(interaction.channel_id)
             if style:
-                bullets = "\n".join(f"• {line}" for line in style.splitlines())
+                bullets = "\n".join(f"• {discord.utils.escape_markdown(line)}" for line in style.splitlines())
                 content = f"**Tämän keskustelun AI-tyyliohjeet**\n{bullets}"
             else:
                 content = "Tässä keskustelussa ei ole aktiivisia AI-tyylilisäyksiä."
