@@ -65,6 +65,24 @@ def _env_bool(key: str, default: bool = True) -> bool:
     return val.strip().lower() in ("1", "true", "yes", "on")
 
 
+ENABLE_OLLAMA = _env_bool("ENABLE_OLLAMA", default=False)
+OLLAMA_HOSTS = tuple(
+    host.strip().rstrip("/")
+    for host in os.getenv(
+        "OLLAMA_HOSTS",
+        "http://192.168.1.11:11434,http://192.168.1.12:11434,http://192.168.1.13:11434",
+    ).split(",")
+    if host.strip()
+)
+OLLAMA_MODELS = tuple(
+    model.strip() for model in os.getenv("OLLAMA_MODELS", "").split(",") if model.strip()
+)
+OLLAMA_CHANNEL_IDS = frozenset(
+    int(channel_id.strip())
+    for channel_id in os.getenv("OLLAMA_CHANNEL_IDS", _raw).split(",")
+    if channel_id.strip()
+)
+
 ENABLE_IMAGE_PRINTING = _env_bool("ENABLE_IMAGE_PRINTING", default=True)
 ENABLE_YOUTUBE = _env_bool("ENABLE_YOUTUBE", default=True)
 ENABLE_INSTAGRAM = _env_bool("ENABLE_INSTAGRAM", default=True)

@@ -12,6 +12,7 @@ from bot.handlers import (
     cleanup_pending, check_url_reaction,
 )
 from bot.attachments import ChannelAttachments
+from bot.ollama import OllamaReplies
 from core.logging import log
 from core.queue import init_queue
 from user.tracker import start_cleanup_task, track_unscheduled_message
@@ -28,6 +29,8 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
     # Alusta yhteiset handlerit (kerran)
     init_handlers(bot, print_queue)
     attachments = ChannelAttachments(bot, config.ATTACHMENT_INDEX_CHANNEL_IDS)
+
+    ollama = OllamaReplies() if config.ENABLE_OLLAMA else None
 
     async def index_attachments(message: discord.Message):
         try:
@@ -103,10 +106,12 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
     async def on_message(message: discord.Message):
         if message.author.bot:
             track_unscheduled_message(bot, message)
+        tasks = [route_incoming(message)]
         if message.guild and message.attachments and message.channel.id in attachments.channels:
-            await asyncio.gather(index_attachments(message), route_incoming(message))
-        else:
-            await route_incoming(message)
+            tasks.append(index_attachments(message))
+        if ollama and bot.user:
+            tasks.append(ollama.handle(message, bot.user.id))
+        await asyncio.gather(*tasks)
 
     @bot.event
     async def on_raw_reaction_add(reaction: discord.RawReactionActionEvent):

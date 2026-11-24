@@ -43,6 +43,30 @@ Lähetä botille tuettu medialinkki tai kuva yksityisviestinä tai määritetyll
 | `SISÄLTÖ POIS` / `SISÄLTÖ PÄÄLLÄ` | Piilottaa tai näyttää tiedoston mukana lähetettävät metatiedot. |
 | `UNOHDAMINUT` | Käynnistää yksityisviestissä käyttäjäasetusten ja botin lähettämien yksityisviestien poiston. |
 
+## Ollama-vastaukset
+
+Lisää `ENABLE_OLLAMA=true` tiedostoon `.env` ja käynnistä botti uudelleen.
+Kokeile Discordissa esimerkiksi `@K-Embedder Miksi taivas on sininen?`.
+Botti vastaa suoraan viestiin yksityisviesteissä ja sallituilla palvelinkanavilla.
+Oletuksena sallittu kanava on `TARGET_CHANNEL_ID`. Voit antaa useita
+kanavatunnisteita pilkulla eroteltuina asetuksessa `OLLAMA_CHANNEL_IDS`.
+
+`OLLAMA_HOSTS` sisältää palvelinten osoitteet kokeilujärjestyksessä.
+Oletusosoitteet ovat `192.168.1.11`, `192.168.1.12` ja `192.168.1.13`
+portissa `11434`. Tyhjällä `OLLAMA_MODELS`-asetuksella botti hakee
+asennetut mallit kultakin palvelimelta. Halutessasi anna pilkulla erotettu
+lista tarkoista paikallisista mallinimistä. Botti kokeilee listaa kullekin
+palvelimelle ja käyttää ensimmäistä onnistunutta vastausta. Lokista näkee
+vastanneen palvelimen ja mallin.
+
+Botti lähettää Ollamalle vain mainintaviestin tekstin ilman omaa mainintaansa.
+Se käsittelee yhden Ollama-kysymyksen kerrallaan. Botin koneen pitää päästä
+Ollama-palvelimiin lähiverkosta. Yhteyden voi tarkistaa botin koneelta
+esimerkiksi PowerShellissä komennolla
+`Invoke-RestMethod http://192.168.1.11:11434/api/tags`.
+Jos Ollama kuuntelee vain paikallisia yhteyksiä, määritä palvelimella
+`OLLAMA_HOST` kuuntelemaan lähiverkon osoitetta.
+
 ## Leikepöydän medialataukset
 
 SoundCloud-kappaleet ladataan oletuksena MP4-videoiksi animoidulla aaltomuodolla. Videon muodostus käyttää samaa toteutusta kuin Discord-botti. Poista GUI:n **SoundCloud leikepöydälle MP4-videona** -valinta, kun haluat MP3-tiedoston. Valinta muistetaan seuraavalla käynnistyksellä.
