@@ -163,6 +163,9 @@ class OllamaReplies:
         self._styles = SessionStyles()
         self._system_prompt = "\n\n".join((_system_prompt(), PEOPLE_INSTRUCTIONS, STYLE_INSTRUCTIONS))
 
+    def session_style(self, channel_id: int | None) -> str:
+        return self._styles.instructions(channel_id) if channel_id is not None else ""
+
     async def handle(self, message: discord.Message, bot_user_id: int):
         if message.author.bot:
             return

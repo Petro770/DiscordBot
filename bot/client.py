@@ -41,6 +41,19 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
         sorted(config.OLLAMA_EXCLUDED_MODELS),
     )
 
+    @attachments.tree.command(name="ai-tyyli", description="Näytä tämän keskustelun AI:n istuntokohtaiset tyyliohjeet.")
+    async def show_ai_style(interaction: discord.Interaction):
+        if ollama is None:
+            content = "Ollama-vastaukset ovat pois käytöstä."
+        else:
+            style = ollama.session_style(interaction.channel_id)
+            if style:
+                bullets = "\n".join(f"• {line}" for line in style.splitlines())
+                content = f"**Tämän keskustelun AI-tyyliohjeet**\n{bullets}"
+            else:
+                content = "Tässä keskustelussa ei ole aktiivisia AI-tyylilisäyksiä."
+        await interaction.response.send_message(content, allowed_mentions=discord.AllowedMentions.none())
+
     async def index_attachments(message: discord.Message):
         try:
             _, unavailable = await attachments.index_message(message, warn_duplicates=not message.author.bot)

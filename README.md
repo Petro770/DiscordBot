@@ -122,6 +122,9 @@ bottiprosessin ajan. Lisäykset vaikuttavat päivityksen jälkeen muodostettavii
 vastauksiin. Botti valitsee valmiista tyyleistä ja säilyttää pysyvän
 ohjetiedoston ennallaan.
 
+Kirjoita Discordissa `/ai-tyyli`, niin botti näyttää kanavalla juuri tämän
+keskustelun aktiiviset tyyliohjeet. Komento lukee ne suoraan botin muistista.
+
 Jos haluat omat ohjeet, kopioi oletusohje UTF-8-tiedostoksi, muokkaa
 sitä ja aseta `OLLAMA_INSTRUCTIONS_FILE=instructions/local.md` tiedostoon
 `.env`. Suhteellinen polku alkaa projektikansiosta. Käynnistä botti uudelleen
