@@ -19,6 +19,16 @@ from core.logging import log
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
+_CONTEXT_KEYS = re.compile(r"""["'](viite|roolit|viesti|henkilöt|istunto|aiemmat_vuorot)["']\s*:""")
+
+
+def _echoes_internal_context(answer: str) -> bool:
+    keys = set(_CONTEXT_KEYS.findall(answer))
+    return (
+        {"viite", "roolit"} <= keys
+        or {"viesti", "henkilöt"} <= keys
+        or "aiemmat_vuorot" in keys
+    )
 
 
 def _is_image(attachment: discord.Attachment) -> bool:
@@ -168,6 +178,14 @@ async def _generate_on_host(
             trace("model_response", message_id, host=host, model=model, content=raw_answer,
                   done_reason=data.get("done_reason"), elapsed_seconds=round(monotonic() - started, 3))
             answer = raw_answer.strip()
+            if _echoes_internal_context(answer):
+                log.warning(
+                    "Ollama %s / %s: sisäisen kontekstin toistanut vastaus hylättiin | viesti=%s",
+                    host, model, message_id,
+                )
+                trace("model_response_rejected", message_id, host=host, model=model,
+                      reason="internal_context_echo")
+                continue
             if answer:
                 log.info("Ollama %s / %s: vastaus saatu (%.1f s)", host, model, monotonic() - started)
                 return answer, attempts
