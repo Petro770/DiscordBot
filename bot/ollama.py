@@ -50,6 +50,9 @@ async def _model_kind(session, host: str, model: str, timeout: aiohttp.ClientTim
             return "vision" if "vision" in capabilities else "text"
         log.info("Ollama %s / %s: palvelin ei ilmoittanut mallin kykyjä", host, model)
     except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, TypeError, AttributeError) as exc:
+        if isinstance(exc, aiohttp.ClientResponseError) and exc.status == 404:
+            log.info("Ollama %s / %s: mallia ei löydy palvelimelta", host, model)
+            return "missing"
         log.warning(
             "Ollama %s / %s: mallin kykyjä ei saatu tarkistettua (%s, HTTP %s)",
             host, model, type(exc).__name__, getattr(exc, "status", "-"),
@@ -132,9 +135,10 @@ class OllamaHosts:
 async def _generate_on_host(
     session: aiohttp.ClientSession, discovery_timeout: aiohttp.ClientTimeout,
     hosts: OllamaHosts, host: str, prompt: str, system_prompt: str, image: str | None,
-    message_id: int | None, preferred_model: str | None, history: list[dict[str, str]],
+    message_id: int | None, models_override: tuple[str, ...] | None,
+    history: list[dict[str, str]], visited: set[str],
 ) -> tuple[str | None, str | None, int]:
-    models = config.OLLAMA_MODELS
+    models = models_override or config.OLLAMA_MODELS
     if not models:
         log.info("Ollama %s: haetaan mallilista", host)
         try:
@@ -156,20 +160,22 @@ async def _generate_on_host(
             )
             return None, None, 0
 
-    candidates = tuple(model for model in models if model not in config.OLLAMA_EXCLUDED_MODELS)
-    if preferred_model in candidates:
-        candidates = (preferred_model, *(model for model in candidates if model != preferred_model))
+    candidates = tuple(
+        model for model in models
+        if model not in config.OLLAMA_EXCLUDED_MODELS and model not in visited
+    )
     log.info("Ollama %s: kokeiltavat mallit=%s (ehdokkaita ennen poissulkuja=%s)",
              host, candidates, len(models))
     if not candidates:
-        log.info("Ollama %s: ei kokeiltavia malleja poissulkujen jälkeen", host)
+        log.info("Ollama %s: ei uusia kokeiltavia malleja", host)
     attempts = 0
     user_message = {"role": "user", "content": prompt}
     if image is not None:
         user_message["images"] = [image]
     for model in candidates:
+        visited.add(model)
         kind = await hosts.model_kind(session, host, model, discovery_timeout)
-        if kind == "remote" or (image is not None and kind != "vision") or (image is None and kind == "vision"):
+        if kind in {"remote", "missing"} or (image is not None and kind != "vision") or (image is None and kind == "vision"):
             log.info("Ollama %s / %s: ohitettu | mallityyppi=%s | kuvapyyntö=%s",
                      host, model, kind, image is not None)
             trace("model_skipped", message_id, host=host, model=model, model_kind=kind,
@@ -232,23 +238,35 @@ async def _generate(
         connect=config.OLLAMA_CONNECT_TIMEOUT_SECONDS,
     )
     discovery_timeout = aiohttp.ClientTimeout(total=config.OLLAMA_DISCOVERY_TIMEOUT_SECONDS)
-    remaining = list(hosts.hosts)
-    if not remaining:
+    if not hosts.hosts:
         log.warning("Ollama: yhtään palvelinta ei ole määritetty | viesti=%s", message_id)
-    preferred_host, preferred_model = preferred or (None, None)
+
+    priority = config.OLLAMA_VISION_PRIORITY if image is not None else config.OLLAMA_CHAT_PRIORITY
+    phases: list[tuple[tuple[str, ...], tuple[str, ...] | None]] = []
+    if preferred and preferred[0] in hosts.hosts:
+        phases.append(((preferred[0],), (preferred[1],)))
+    phases.extend((hosts.hosts, (model,)) for model in priority)
+    phases.append((hosts.hosts, None))
+    visited = {host: set() for host in hosts.hosts}
     attempts = 0
     async with aiohttp.ClientSession(timeout=timeout, raise_for_status=True) as session:
-        while remaining:
-            candidates = [preferred_host] if preferred_host in remaining else remaining
-            async with hosts.reserve(candidates) as host:
-                remaining.remove(host)
-                answer, model, host_attempts = await _generate_on_host(
-                    session, discovery_timeout, hosts, host, prompt, system_prompt, image,
-                    message_id, preferred_model if host == preferred_host else None, history or [],
-                )
-                attempts += host_attempts
-                if answer and model:
-                    return answer, (host, model)
+        for phase_hosts, models in phases:
+            if models and (
+                models[0] in config.OLLAMA_EXCLUDED_MODELS
+                or (config.OLLAMA_MODELS and models[0] not in config.OLLAMA_MODELS)
+            ):
+                continue
+            remaining = [host for host in phase_hosts if not models or models[0] not in visited[host]]
+            while remaining:
+                async with hosts.reserve(remaining) as host:
+                    remaining.remove(host)
+                    answer, model, host_attempts = await _generate_on_host(
+                        session, discovery_timeout, hosts, host, prompt, system_prompt, image,
+                        message_id, models, history or [], visited[host],
+                    )
+                    attempts += host_attempts
+                    if answer and model:
+                        return answer, (host, model)
     if image is not None and not attempts:
         log.warning(
             "Ollama: yhtään kuvia tukevaa mallia ei saatu vahvistettua | viesti=%s | palvelimia=%s",

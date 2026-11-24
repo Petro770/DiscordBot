@@ -98,6 +98,12 @@ OLLAMA_MODELS = tuple(model for model in _ollama_model_entries if not model.star
 OLLAMA_EXCLUDED_MODELS = frozenset(
     model[1:].strip() for model in _ollama_model_entries if model.startswith("!")
 )
+OLLAMA_CHAT_PRIORITY = tuple(dict.fromkeys(
+    model.strip() for model in os.getenv("OLLAMA_CHAT_PRIORITY", "").split(",") if model.strip()
+))
+OLLAMA_VISION_PRIORITY = tuple(dict.fromkeys(
+    model.strip() for model in os.getenv("OLLAMA_VISION_PRIORITY", "").split(",") if model.strip()
+))
 _ollama_channel_ids = os.getenv("OLLAMA_CHANNEL_IDS")
 OLLAMA_CHANNEL_SOURCE = "TARGET_CHANNEL_ID" if _ollama_channel_ids is None else "OLLAMA_CHANNEL_IDS"
 OLLAMA_CHANNEL_IDS = frozenset(

@@ -123,6 +123,19 @@ pidä listassa vähintään yksi kuvamalli. Botti ohittaa tekstimallit
 kuvapyynnöissä. Kuvavuoro ei vaihda keskustelun tekstimallia. Kuvadata lähetetään mallille vain tämän pyynnön yhteydessä.
 Keskustelumuistiin voi jäädä katkelma botin tekstivastauksesta.
 
+### Mallien prioriteetti
+
+`OLLAMA_CHAT_PRIORITY` ja `OLLAMA_VISION_PRIORITY` ovat erilliset, pilkulla
+erotetut listat tarkoista mallinimistä. Botti kokeilee käynnissä olevan
+tekstikeskustelun palvelin–malliparia ensin. Sen jälkeen se kokeilee
+prioriteettilistan ensimmäistä mallia sallituilla palvelimilla ennen
+listan seuraavaa mallia. Jos lista on tyhjä tai yksikään sen malleista
+ei vastaa, tavallinen mallihaku jatkuu jäljellä olevan aikarajan puitteissa.
+
+`OLLAMA_MODELS`-kokeilulista, `!malli`-poissulut ja kuvatukirajaus pätevät
+myös prioriteettilistoihin. Asetusten muutokset tulevat voimaan botin
+uudelleenkäynnistyksessä.
+
 ### Ollaman aikarajat
 
 Aseta aikarajat `.env`-tiedostossa sekunteina ja käynnistä botti uudelleen.
