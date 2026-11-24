@@ -54,14 +54,18 @@ def _system_prompt() -> str:
 
 
 async def _generate(prompt: str, system_prompt: str) -> str | None:
-    timeout = aiohttp.ClientTimeout(total=40, connect=3)
+    timeout = aiohttp.ClientTimeout(
+        total=config.OLLAMA_MODEL_TIMEOUT_SECONDS,
+        connect=config.OLLAMA_CONNECT_TIMEOUT_SECONDS,
+    )
+    discovery_timeout = aiohttp.ClientTimeout(total=config.OLLAMA_DISCOVERY_TIMEOUT_SECONDS)
     async with aiohttp.ClientSession(timeout=timeout, raise_for_status=True) as session:
         for host in config.OLLAMA_HOSTS:
             models = config.OLLAMA_MODELS
             if not models:
                 try:
                     async with session.get(
-                        f"{host}/api/tags", timeout=aiohttp.ClientTimeout(total=5),
+                        f"{host}/api/tags", timeout=discovery_timeout,
                         allow_redirects=False,
                     ) as response:
                         data = await response.json()
@@ -127,9 +131,15 @@ class OllamaReplies:
                 except discord.HTTPException:
                     log.warning("Ollama: kirjoitusilmaisinta ei saatu näytettyä kanavalla %s", message.channel.id)
                 try:
-                    answer = await asyncio.wait_for(_generate(prompt, self._system_prompt), timeout=120)
+                    answer = await asyncio.wait_for(
+                        _generate(prompt, self._system_prompt),
+                        timeout=config.OLLAMA_TOTAL_TIMEOUT_SECONDS,
+                    )
                 except asyncio.TimeoutError:
-                    log.warning("Ollama: vastaamisen kokonaisaika ylittyi")
+                    log.warning(
+                        "Ollama: vastaamisen kokonaisaika (%g s) ylittyi",
+                        config.OLLAMA_TOTAL_TIMEOUT_SECONDS,
+                    )
                     answer = None
             if not answer:
                 answer = "Ollama ei saanut tällä kertaa muodostettua vastausta."

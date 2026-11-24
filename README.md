@@ -67,6 +67,22 @@ esimerkiksi PowerShellissä komennolla
 Jos Ollama kuuntelee vain paikallisia yhteyksiä, määritä palvelimella
 `OLLAMA_HOST` kuuntelemaan lähiverkon osoitetta.
 
+### Ollaman aikarajat
+
+Aseta aikarajat `.env`-tiedostossa sekunteina ja käynnistä botti uudelleen.
+
+| Asetus | Oletus | Vaikutus |
+| --- | ---: | --- |
+| `OLLAMA_CONNECT_TIMEOUT_SECONDS` | 3 | Yhteyden avaaminen chat-pyynnössä. |
+| `OLLAMA_DISCOVERY_TIMEOUT_SECONDS` | 5 | Yhden palvelimen mallilistan haku yhteyden avauksineen. Käytössä, kun `OLLAMA_MODELS` on tyhjä. |
+| `OLLAMA_MODEL_TIMEOUT_SECONDS` | 40 | Yksi chat-pyyntö yhteyden avauksesta valmiiseen vastaukseen. |
+| `OLLAMA_TOTAL_TIMEOUT_SECONDS` | 120 | Koko Ollama-kierros, mallilistojen haut ja varayritykset mukaan lukien. |
+
+Mallin aikarajan ylittyessä botti kokeilee seuraavaa vaihtoehtoa, jos
+kokonaisaikaa on jäljellä. Jos haluat antaa kolmelle malliyritykselle
+kullekin 120 sekuntia, aseta esimerkiksi
+`OLLAMA_MODEL_TIMEOUT_SECONDS=120` ja `OLLAMA_TOTAL_TIMEOUT_SECONDS=400`.
+
 ### Botin persoona ja ohjeet
 
 [instructions/discord-assistant.md](instructions/discord-assistant.md) sisältää puhetyylin ja ohjeet botin

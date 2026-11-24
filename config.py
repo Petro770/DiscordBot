@@ -1,4 +1,5 @@
 """Keskitetyt asetukset ja konstantit."""
+import math
 import os
 from dotenv import load_dotenv
 
@@ -65,6 +66,20 @@ def _env_bool(key: str, default: bool = True) -> bool:
     return val.strip().lower() in ("1", "true", "yes", "on")
 
 
+def _ollama_timeout(key: str, default: float) -> float:
+    try:
+        seconds = float(os.getenv(key, str(default)))
+    except ValueError as exc:
+        raise ValueError(f"{key}: anna positiivinen aikaraja sekunteina.") from exc
+    if not math.isfinite(seconds) or seconds <= 0:
+        raise ValueError(f"{key}: anna positiivinen aikaraja sekunteina.")
+    return seconds
+
+
+OLLAMA_CONNECT_TIMEOUT_SECONDS = _ollama_timeout("OLLAMA_CONNECT_TIMEOUT_SECONDS", 3)
+OLLAMA_DISCOVERY_TIMEOUT_SECONDS = _ollama_timeout("OLLAMA_DISCOVERY_TIMEOUT_SECONDS", 5)
+OLLAMA_MODEL_TIMEOUT_SECONDS = _ollama_timeout("OLLAMA_MODEL_TIMEOUT_SECONDS", 40)
+OLLAMA_TOTAL_TIMEOUT_SECONDS = _ollama_timeout("OLLAMA_TOTAL_TIMEOUT_SECONDS", 120)
 ENABLE_OLLAMA = _env_bool("ENABLE_OLLAMA", default=False)
 OLLAMA_INSTRUCTIONS_FILE = os.getenv("OLLAMA_INSTRUCTIONS_FILE", "").strip()
 OLLAMA_HOSTS = tuple(
