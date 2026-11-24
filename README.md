@@ -92,6 +92,19 @@ esimerkiksi PowerShellissä komennolla
 Jos Ollama kuuntelee vain paikallisia yhteyksiä, määritä palvelimella
 `OLLAMA_HOST` kuuntelemaan lähiverkon osoitetta.
 
+### Kuvien tulkinta
+
+Liitä kuva samaan viestiin botin maininnan kanssa, esimerkiksi
+`@Botti mitä tässä kuvassa näkyy?`. Pelkkä maininta ja kuvaliite pyytää
+lyhyen kuvauksen. Botti käyttää ensimmäistä sopivaa JPEG-, PNG- tai
+WebP-liitettä, jonka koko on enintään 8 Mt.
+
+Ollama-palvelimella pitää olla asennettuna malli, joka ilmoittaa
+`vision`-tuen `/api/show`-vastauksessa. Jos käytät `OLLAMA_MODELS`-kokeilulistaa,
+pidä listassa vähintään yksi kuvamalli. Botti ohittaa tekstimallit
+kuvapyynnöissä. Kuvadata lähetetään mallille vain tämän pyynnön yhteydessä.
+Keskustelumuistiin voi jäädä katkelma botin tekstivastauksesta.
+
 ### Ollaman aikarajat
 
 Aseta aikarajat `.env`-tiedostossa sekunteina ja käynnistä botti uudelleen.
