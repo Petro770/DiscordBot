@@ -1,7 +1,7 @@
 """Ollama replies to direct Discord mentions."""
 import asyncio
 import re
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 from time import monotonic
 
@@ -54,73 +54,110 @@ def _system_prompt() -> str:
     return instructions + "\n\n# Tämän botin asetukset\n" + "\n".join(details)
 
 
-async def _generate(prompt: str, system_prompt: str) -> str | None:
+class OllamaHosts:
+    def __init__(self, hosts: tuple[str, ...]):
+        self.hosts = tuple(dict.fromkeys(hosts))
+        self._busy: set[str] = set()
+        self._available = asyncio.Condition()
+
+    @asynccontextmanager
+    async def reserve(self, candidates: list[str]):
+        async with self._available:
+            await self._available.wait_for(lambda: any(host not in self._busy for host in candidates))
+            host = next(host for host in candidates if host not in self._busy)
+            self._busy.add(host)
+        try:
+            yield host
+        finally:
+            async with self._available:
+                self._busy.remove(host)
+                self._available.notify_all()
+
+
+async def _generate_on_host(
+    session: aiohttp.ClientSession, discovery_timeout: aiohttp.ClientTimeout,
+    host: str, prompt: str, system_prompt: str,
+) -> str | None:
+    models = config.OLLAMA_MODELS
+    if not models:
+        log.info("Ollama %s: haetaan mallilista", host)
+        try:
+            async with session.get(
+                f"{host}/api/tags", timeout=discovery_timeout,
+                allow_redirects=False,
+            ) as response:
+                data = await response.json()
+            models = tuple(
+                entry["name"] for entry in data["models"]
+                if entry.get("name") and not entry.get("remote_host")
+                and not entry["name"].lower().endswith(":cloud")
+                and not entry["name"].lower().split(":", 1)[0].endswith("-cloud")
+            )
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            log.warning(
+                "Ollama %s: mallien haku epäonnistui (%s, HTTP %s)",
+                host, type(exc).__name__, getattr(exc, "status", "-"),
+            )
+            return None
+
+    candidates = tuple(model for model in models if model not in config.OLLAMA_EXCLUDED_MODELS)
+    log.info("Ollama %s: kokeiltavat mallit=%s (ehdokkaita ennen poissulkuja=%s)",
+             host, candidates, len(models))
+    for model in candidates:
+        started = monotonic()
+        log.info("Ollama %s / %s: lähetetään chat-pyyntö", host, model)
+        try:
+            async with session.post(
+                f"{host}/api/chat",
+                json={
+                    "model": model,
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "stream": False,
+                    "options": {"num_predict": 500},
+                },
+                allow_redirects=False,
+            ) as response:
+                data = await response.json()
+            answer = data["message"]["content"].strip()
+            if answer:
+                log.info("Ollama %s / %s: vastaus saatu (%.1f s)", host, model, monotonic() - started)
+                return answer
+            log.warning("Ollama %s / %s: tyhjä vastaus", host, model)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            log.warning(
+                "Ollama %s / %s: pyyntö epäonnistui (%.1f s, %s, HTTP %s)",
+                host, model, monotonic() - started, type(exc).__name__, getattr(exc, "status", "-"),
+            )
+
+    return None
+
+
+async def _generate(prompt: str, system_prompt: str, hosts: OllamaHosts) -> str | None:
     timeout = aiohttp.ClientTimeout(
         total=config.OLLAMA_MODEL_TIMEOUT_SECONDS,
         connect=config.OLLAMA_CONNECT_TIMEOUT_SECONDS,
     )
     discovery_timeout = aiohttp.ClientTimeout(total=config.OLLAMA_DISCOVERY_TIMEOUT_SECONDS)
+    remaining = list(hosts.hosts)
     async with aiohttp.ClientSession(timeout=timeout, raise_for_status=True) as session:
-        for host in config.OLLAMA_HOSTS:
-            models = config.OLLAMA_MODELS
-            if not models:
-                log.info("Ollama %s: haetaan mallilista", host)
-                try:
-                    async with session.get(
-                        f"{host}/api/tags", timeout=discovery_timeout,
-                        allow_redirects=False,
-                    ) as response:
-                        data = await response.json()
-                    models = tuple(
-                        entry["name"] for entry in data["models"]
-                        if entry.get("name") and not entry.get("remote_host")
-                        and not entry["name"].lower().endswith(":cloud")
-                        and not entry["name"].lower().split(":", 1)[0].endswith("-cloud")
-                    )
-                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError) as exc:
-                    log.warning(
-                        "Ollama %s: mallien haku epäonnistui (%s, HTTP %s)",
-                        host, type(exc).__name__, getattr(exc, "status", "-"),
-                    )
-                    continue
-
-            candidates = tuple(model for model in models if model not in config.OLLAMA_EXCLUDED_MODELS)
-            log.info("Ollama %s: kokeiltavat mallit=%s (ehdokkaita ennen poissulkuja=%s)",
-                     host, candidates, len(models))
-            for model in candidates:
-                started = monotonic()
-                log.info("Ollama %s / %s: lähetetään chat-pyyntö", host, model)
-                try:
-                    async with session.post(
-                        f"{host}/api/chat",
-                        json={
-                            "model": model,
-                            "messages": [
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": prompt},
-                            ],
-                            "stream": False,
-                            "options": {"num_predict": 500},
-                        },
-                        allow_redirects=False,
-                    ) as response:
-                        data = await response.json()
-                    answer = data["message"]["content"].strip()
-                    if answer:
-                        log.info("Ollama %s / %s: vastaus saatu (%.1f s)", host, model, monotonic() - started)
-                        return answer
-                    log.warning("Ollama %s / %s: tyhjä vastaus", host, model)
-                except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError) as exc:
-                    log.warning(
-                        "Ollama %s / %s: pyyntö epäonnistui (%.1f s, %s, HTTP %s)",
-                        host, model, monotonic() - started, type(exc).__name__, getattr(exc, "status", "-"),
-                    )
+        while remaining:
+            async with hosts.reserve(remaining) as host:
+                remaining.remove(host)
+                answer = await _generate_on_host(session, discovery_timeout, host, prompt, system_prompt)
+                if answer:
+                    return answer
     return None
 
 
 class OllamaReplies:
     def __init__(self):
-        self._request = asyncio.Lock()
+        self._hosts = OllamaHosts(config.OLLAMA_HOSTS)
+        self._workers = asyncio.Semaphore(max(1, len(self._hosts.hosts)))
+        self._pending = 0
+        self._reply_tails: dict[int, asyncio.Future] = {}
         self._system_prompt = _system_prompt()
 
     async def handle(self, message: discord.Message, bot_user_id: int):
@@ -141,31 +178,67 @@ class OllamaReplies:
         log.info("Ollama: maininta hyväksytty | viesti=%s | kanava=%s", message.id, channel_id)
         prompt = mention.sub("", message.content).strip()
 
-        if not prompt:
-            answer = "Kirjoita kysymys samaan viestiin maininnan kanssa."
-        elif self._request.locked():
-            answer = "Vastaan parhaillaan toiseen kysymykseen. Kokeile hetken päästä uudelleen."
-        else:
-            async with self._request, AsyncExitStack() as typing:
-                try:
-                    await typing.enter_async_context(message.channel.typing())
-                except discord.HTTPException:
-                    log.warning("Ollama: kirjoitusilmaisinta ei saatu näytettyä kanavalla %s", message.channel.id)
-                try:
-                    answer = await asyncio.wait_for(
-                        _generate(prompt, self._system_prompt),
-                        timeout=config.OLLAMA_TOTAL_TIMEOUT_SECONDS,
-                    )
-                except asyncio.TimeoutError:
-                    log.warning(
-                        "Ollama: vastaamisen kokonaisaika (%g s) ylittyi",
-                        config.OLLAMA_TOTAL_TIMEOUT_SECONDS,
-                    )
-                    answer = None
-            if not answer:
-                log.warning("Ollama: viesti %s jäi ilman mallin vastausta", message.id)
-                answer = "Ollama ei saanut tällä kertaa muodostettua vastausta."
+        if self._pending >= 20 + len(self._hosts.hosts):
+            log.warning("Ollama: jono täynnä | viesti=%s | kanava=%s", message.id, channel_id)
+            try:
+                await message.add_reaction("🚫")
+            except discord.HTTPException:
+                log.warning("Ollama: täyden jonon reaktiota ei saatu lisättyä | viesti=%s", message.id)
+            return
 
+        previous = self._reply_tails.get(channel_id)
+        turn = asyncio.get_running_loop().create_future()
+        self._reply_tails[channel_id] = turn
+        self._pending += 1
+        log.info("Ollama: viesti jonossa | viesti=%s | kesken=%s", message.id, self._pending)
+
+        def finish_turn(_previous=None):
+            if not turn.done():
+                turn.set_result(None)
+            if self._reply_tails.get(channel_id) is turn:
+                del self._reply_tails[channel_id]
+
+        try:
+            if prompt:
+                async with self._workers:
+                    answer = await self._answer(message, prompt)
+            else:
+                answer = "Kirjoita kysymys samaan viestiin maininnan kanssa."
+            if previous is not None:
+                await asyncio.shield(previous)
+            await self._reply(message, answer)
+        finally:
+            self._pending -= 1
+            if previous is not None and not previous.done():
+                previous.add_done_callback(finish_turn)
+            else:
+                finish_turn()
+
+    async def _answer(self, message: discord.Message, prompt: str) -> str:
+        log.info("Ollama: käsittely alkaa | viesti=%s", message.id)
+        async with AsyncExitStack() as typing:
+            try:
+                await typing.enter_async_context(message.channel.typing())
+            except discord.HTTPException:
+                log.warning("Ollama: kirjoitusilmaisinta ei saatu näytettyä kanavalla %s", message.channel.id)
+            try:
+                answer = await asyncio.wait_for(
+                    _generate(prompt, self._system_prompt, self._hosts),
+                    timeout=config.OLLAMA_TOTAL_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                log.warning(
+                    "Ollama: vastaamisen kokonaisaika (%g s) ylittyi | viesti=%s",
+                    config.OLLAMA_TOTAL_TIMEOUT_SECONDS, message.id,
+                )
+                answer = None
+        if not answer:
+            log.warning("Ollama: viesti %s jäi ilman mallin vastausta", message.id)
+            return "Ollama ei saanut tällä kertaa muodostettua vastausta."
+        return answer
+
+    async def _reply(self, message: discord.Message, answer: str):
+        channel_id = message.channel.id
         encoded = answer.encode("utf-16-le")
         if len(encoded) > 4000:
             answer = encoded[:3998].decode("utf-16-le", errors="ignore").rstrip() + "…"

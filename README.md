@@ -70,7 +70,12 @@ on sekä kokeilulistalla että poissuljettu, poissulku voittaa. Botti käyttää
 ensimmäistä onnistunutta vastausta. Lokista näkee vastanneen palvelimen ja mallin.
 
 Botti lähettää Ollamalle botin ohjeet ja mainintaviestin tekstin ilman omaa mainintaansa.
-Se käsittelee yhden Ollama-kysymyksen kerrallaan. Botin koneen pitää päästä
+Vapaat Ollama-palvelimet käsittelevät kysymyksiä rinnakkain, enintään yksi
+kysymys palvelinta kohti. Botti lähettää vastaukset saapumisjärjestyksessä
+kullakin Discord-kanavalla ja yksityisviestikeskustelussa. Botti voi pitää
+käsittelypaikkojen lisäksi enintään 20 viestiä jonossa tai odottamassa omaa
+vastausvuoroaan. Täyden jonon merkkinä botti reagoi uuteen viestiin 🚫.
+Kokonaisaika alkaa viestin päästessä käsittelyyn. Botin koneen pitää päästä
 Ollama-palvelimiin lähiverkosta. Yhteyden voi tarkistaa botin koneelta
 esimerkiksi PowerShellissä komennolla
 `Invoke-RestMethod http://192.168.1.11:11434/api/tags`.
