@@ -22,7 +22,10 @@ _MAX_STYLE = 160
 _MAX_TURN = 350
 _MAX_EXCHANGES = 3
 _MAX_CHANNELS = 128
-_STYLE_MARKER = re.compile(r"^\s*\[tyyli:\s*([^\r\n]*?)\]\s*$", re.IGNORECASE | re.MULTILINE)
+_STYLE_MARKER = re.compile(
+    r"\[tyyli:[ \t]*((?:\[[^\[\]\r\n]*\]|[^\[\]\r\n])*)\]",
+    re.IGNORECASE,
+)
 _PERSON_REFERENCE = re.compile(r"\[henkilo_\d+\]|<@!?\d+>")
 
 
@@ -72,6 +75,6 @@ class SessionMemory:
 
 def split_style(answer: str) -> tuple[str, str | None]:
     answer = answer.strip()
-    marker = _STYLE_MARKER.fullmatch(answer.rsplit("\n", 1)[-1])
+    marker = next((match for match in _STYLE_MARKER.finditer(answer) if match.end() == len(answer)), None)
     style = _PERSON_REFERENCE.sub("@henkilö", marker[1]).strip()[:_MAX_STYLE] if marker else ""
     return _STYLE_MARKER.sub("", answer).strip(), style or None
