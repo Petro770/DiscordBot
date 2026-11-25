@@ -31,6 +31,11 @@ def _echoes_internal_context(answer: str) -> bool:
     )
 
 
+def _is_cloud_model(model: str) -> bool:
+    name = model.lower()
+    return name.endswith(":cloud") or name.split(":", 1)[0].endswith("-cloud")
+
+
 def _is_image(attachment: discord.Attachment) -> bool:
     if attachment.content_type:
         return attachment.content_type.split(";", 1)[0].strip().lower() in _IMAGE_TYPES
@@ -150,8 +155,7 @@ async def _generate_on_host(
             models = tuple(
                 entry["name"] for entry in data["models"]
                 if entry.get("name") and not entry.get("remote_host")
-                and not entry["name"].lower().endswith(":cloud")
-                and not entry["name"].lower().split(":", 1)[0].endswith("-cloud")
+                and not _is_cloud_model(entry["name"])
             )
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError) as exc:
             log.warning(
@@ -161,8 +165,8 @@ async def _generate_on_host(
             return None, None, 0
 
     candidates = tuple(
-        model for model in models
-        if model not in config.OLLAMA_EXCLUDED_MODELS and model not in visited
+        model for model in dict.fromkeys(models)
+        if model not in config.OLLAMA_EXCLUDED_MODELS and model not in visited and not _is_cloud_model(model)
     )
     log.info("Ollama %s: kokeiltavat mallit=%s (ehdokkaita ennen poissulkuja=%s)",
              host, candidates, len(models))
@@ -213,10 +217,11 @@ async def _generate_on_host(
                 trace("model_response_rejected", message_id, host=host, model=model,
                       reason="internal_context_echo")
                 continue
-            if answer:
+            if split_style(answer)[0]:
                 log.info("Ollama %s / %s: vastaus saatu (%.1f s)", host, model, monotonic() - started)
                 return answer, model, attempts
-            log.warning("Ollama %s / %s: tyhjä vastaus", host, model)
+            log.warning("Ollama %s / %s: ei käyttäjälle tarkoitettua vastaustekstiä", host, model)
+            trace("model_response_rejected", message_id, host=host, model=model, reason="empty_reply")
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError) as exc:
             log.warning(
                 "Ollama %s / %s: pyyntö epäonnistui (%.1f s, %s, HTTP %s)",
@@ -253,6 +258,7 @@ async def _generate(
         for phase_hosts, models in phases:
             if models and (
                 models[0] in config.OLLAMA_EXCLUDED_MODELS
+                or _is_cloud_model(models[0])
                 or (config.OLLAMA_MODELS and models[0] not in config.OLLAMA_MODELS)
             ):
                 continue
