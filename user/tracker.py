@@ -6,6 +6,7 @@ kanavakohtaisiin JSON-tiedostoihin (DM/ ja Channels/ kansioissa).
 Taustatehtävä skannaa tiedostot säännöllisesti ja poistaa
 vanhentuneet viestit Discordista.
 """
+from typing import Dict, Optional
 import json
 import os
 import time
@@ -58,18 +59,18 @@ def _get_file_path(channel: discord.abc.Messageable) -> Path:
 
 def _load_data(path: Path, *, strict: bool = False) -> dict:
     """Lataa JSON-tiedosto. Palauttaa tyhjän dict jos ei ole olemassa."""
-    if not path.exists():
-        return {}
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
             if not isinstance(data, dict):
                 raise ValueError("JSONin juuren pitää olla objekti")
             return data
+    except FileNotFoundError:
+        return {}
     except (ValueError, OSError) as e:
         if strict:
             raise
-        log.warning("message_tracker: luku epäonnistui (%s): %s", path.name, e)
+        log.warning("JSON-tiedoston luku epäonnistui (%s): %s", path.name, e)
         return {}
 
 
@@ -93,7 +94,7 @@ def _save_data(path: Path, data: dict) -> None:
 # REKISTERÖINTI
 # ============================================================
 
-def register_message(message: discord.Message,lifetime_seconds: int | None = None,) -> None:
+def register_message(message: discord.Message,lifetime_seconds: Optional[int] = None,) -> None:
     """Rekisteröi botin lähettämä viesti poistolokiin.
 
     Parametrit:
@@ -123,7 +124,7 @@ def _has_delete_at(entry: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
 
 
-def _fallback_schedule(message: discord.Message) -> dict[str, float]:
+def _fallback_schedule(message: discord.Message) -> Dict[str, float]:
     created_at = message.created_at.timestamp()
     return {
         "created_at": created_at,

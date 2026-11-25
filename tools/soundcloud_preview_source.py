@@ -1,4 +1,5 @@
 """Reusable input for rendering one SoundCloud preview frame."""
+from typing import Optional
 from array import array
 from dataclasses import dataclass, replace
 from io import BytesIO
@@ -23,7 +24,7 @@ class SoundCloudPreviewSource:
     cover: Image.Image
     intro: Image.Image
     title: Image.Image
-    downbeat_phase: int | None = None
+    downbeat_phase: Optional[int] = None
 
     @classmethod
     def from_archive(cls, path):

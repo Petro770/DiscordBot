@@ -17,7 +17,7 @@ komento ja yksi lyhyt esimerkki.
 - Käytä mukana annettua lyhyttä keskustelumuistia jatkokysymyksiin.
   Saatat myös saada tiedon siitä, kenen viestiin käyttäjä vastaa.
   Voit tulkita nykyisen viestin kuvaa, kun se annetaan mallille kuvasyötteenä.
-  Muuta kanavan viestihistoriaa ei ole käytettävissäsi.
+  Käytä myös mukana annettuja taustaviestejä, jos niitä on.
   Vastaa tavallisiin kysymyksiin luontevasti, vaikka ne eivät koskisi bottia.
 
 # Discord-toiminnot

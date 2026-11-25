@@ -70,6 +70,19 @@
         {"type": "feat", "text": "AliExpress-tuotelinkeistä voi näyttää saatavilla olevat tuotetiedot Discordissa."},
         {"type": "improve", "text": "Botin aiempia ajastamattomia kanavaviestejä voi etsiä ja siivota asetusten mukaan."}
       ]
+    },
+    {
+      "version": "1.2.0",
+      "date": "2026-11-26",
+      "changes": [
+        {"type": "feat", "text": "Hallintapaneelin AI-keskustelut-näkymä näyttää jonot, malliyritykset, virheet ja tarvittaessa tekstijäljityksen."},
+        {"type": "improve", "text": "Ollama saa keskustelun taustaksi aiempia viestejä, puhujia ja Discordin vastausviittaukset."},
+        {"type": "fix", "text": "Ollama, liiteindeksi ja viestireititys toimivat erillään myös virhetilanteissa. Tilapäinen liitevirhe säilyttää historian jatkokohdan."},
+        {"type": "fix", "text": "Tulostuksen väliaikaistiedostot siivotaan virheissä. SoundCloudin FFmpeg-käsittely ja viimeistely aikakatkaistaan jumitilanteessa."},
+        {"type": "fix", "text": "GUI kertoo selvemmin Git-, lataus- ja kirjautumisvirheistä. Windows-päivitys tarkistaa pythonw.exe:n ennen botin pysäyttämistä."},
+        {"type": "improve", "text": "Viestien oletussäilytys on 30 päivää, jos MESSAGE_RETENTION_DAYS puuttuu tai on tyhjä. Aiemmin asetettu arvo säilyy."},
+        {"type": "improve", "text": "Suljetun changelog-DM:n tilalle voidaan lähettää hiljainen ilmoitus alkuperäiseen kanavaan."}
+      ]
     }
   ]
 }

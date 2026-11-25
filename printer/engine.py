@@ -7,13 +7,27 @@ from config import PRINTER_NAME
 from core.logging import log
 
 
+class InvalidPrintImage(ValueError):
+    pass
+
+
+def remove_print_file(path: str) -> None:
+    try:
+        os.unlink(path)
+    except FileNotFoundError:
+        pass
+    except OSError:
+        log.warning("Tulostuksen väliaikaistiedoston poisto epäonnistui", exc_info=True)
+
+
 def load_image(path: str) -> Image.Image:
     """Lataa kuvan valkoisella taustalla RGB-tilana."""
     try:
         with Image.open(path) as source:
             image = ImageOps.exif_transpose(source).convert("RGBA")
-    except Exception as e:
-        raise ValueError(f"Tiedosto ei ole validi kuva: {path} ({e})") from e
+    except (OSError, ValueError, Image.DecompressionBombError) as exc:
+        log.warning("Tulostuskuvan lukeminen epäonnistui: %s", exc)
+        raise InvalidPrintImage("Tiedosto ei ole kelvollinen tai tuettu kuva.") from exc
     white = Image.new("RGBA", image.size, "white")
     white.alpha_composite(image)
     return white.convert("RGB")
@@ -24,6 +38,7 @@ def _print_windows(image: Image.Image, printer_name: str, title: str) -> str:
     from PIL import ImageWin
 
     dc = win32ui.CreateDC()
+    scaled = None
     started = False
     try:
         dc.CreatePrinterDC(printer_name)
@@ -50,7 +65,8 @@ def _print_windows(image: Image.Image, printer_name: str, title: str) -> str:
             dc.EndDoc()
 
         finally:
-            scaled.close()
+            if scaled is not None:
+                scaled.close()
 
         started = False
         return "Työ lisätty Windowsin tulostusjonoon."

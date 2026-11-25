@@ -112,6 +112,8 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
             bot._msg_cleanup_task = await start_cleanup_task(bot)
 
         # 4) Kanavan varmistus (ei estä käynnistystä)
+        if TARGET_CHANNEL_ID is None:
+            return
         channel = bot.get_channel(TARGET_CHANNEL_ID)
         if channel is None:
             for attempt in range(3):
@@ -122,18 +124,23 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
                     log.error("⚠️ Kanavaa %s ei löytynyt: %s", TARGET_CHANNEL_ID, exc)
                     if attempt < 2:
                         await asyncio.sleep(5 * (attempt + 1))
-        log.info("Kuuntelee kanavaa #%s", channel.name)
+        if channel is not None:
+            log.info("Kuuntelee kanavaa #%s", channel.name)
 
     @bot.event
     async def on_message(message: discord.Message):
         if message.author.bot:
             track_unscheduled_message(bot, message)
-        tasks = [route_incoming(message)]
+        tasks = {"viestireititys": route_incoming(message)}
         if message.guild and message.attachments and message.channel.id in attachments.channels:
-            tasks.append(index_attachments(message))
+            tasks["liiteindeksi"] = index_attachments(message)
         if ollama and bot.user:
-            tasks.append(ollama.handle(message, bot.user.id))
-        await asyncio.gather(*tasks)
+            tasks["Ollama"] = ollama.handle(message, bot.user.id)
+        results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+        for name, result in zip(tasks, results):
+            if isinstance(result, Exception):
+                log.error("%s epäonnistui | viesti=%s | kanava=%s",
+                          name, message.id, message.channel.id, exc_info=result)
 
     @bot.event
     async def on_raw_reaction_add(reaction: discord.RawReactionActionEvent):

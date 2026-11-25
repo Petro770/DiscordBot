@@ -142,7 +142,7 @@ class ChannelAttachments:
             return image
 
     async def index_message(
-        self, message: discord.Message, *, warn_duplicates: bool = False
+        self, message: discord.Message, *, warn_duplicates: bool = False, retry_transient: bool = False
     ) -> tuple[int, int]:
         added = unavailable = 0
         if message.attachments:
@@ -164,10 +164,14 @@ class ChannelAttachments:
                     continue
                 try:
                     image = await self._fingerprint(attachment)
-                except aiohttp.ClientResponseError as exc:
-                    log.warning("Liite %s: lataus epäonnistui, HTTP %s", attachment.id, exc.status)
-                    if exc.status not in (404, 410):
-                        raise
+                except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                    status = getattr(exc, "status", None)
+                    log.warning(
+                        "Liiteindeksi: liite=%s viesti=%s lataus epäonnistui (%s, HTTP %s)",
+                        attachment.id, message.id, type(exc).__name__, status,
+                    )
+                    if retry_transient and status not in (404, 410):
+                        raise  # Historiakohtaa ei siirretä tämän viestin ohi.
                     unavailable += 1
                     continue
                 log.info("Liite %s: tallennetaan tietokantaan", attachment.id)
@@ -351,7 +355,7 @@ class ChannelAttachments:
                     log.info("/indeksoi: kanava=%s, erän raja=%s", channel.id,
                              "viestimäärä" if messages == HISTORY_BATCH_SIZE else "aika")
                     break
-                new, missing = await self.index_message(message)
+                new, missing = await self.index_message(message, retry_transient=True)
                 await asyncio.to_thread(self.index.advance_history, channel.id, message.id)
                 log.debug("/indeksoi: historiakohta tallennettu, kanava=%s viesti=%s", channel.id, message.id)
                 messages += 1

@@ -3,6 +3,9 @@ import asyncio
 import signal
 import sys
 
+if sys.version_info < (3, 10):
+    raise SystemExit("DiscordBot vaatii Python 3.10:n tai uudemman.")
+
 import discord
 
 import config
@@ -16,8 +19,10 @@ async def main():
     # CLI-versio: loki näkyy myös konsolissa
     enable_console()
 
-    if not config.TOKEN:
-        raise SystemExit("Aseta DISCORD_TOKEN config.py-tiedostoon.")
+    try:
+        token = config.require_discord_token()
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from None
 
     log.info("DiscordBot v%s käynnistyy...", config.BOT_VERSION)
 
@@ -33,7 +38,7 @@ async def main():
             )
 
     try:
-        await bot.start(config.TOKEN)
+        await bot.start(token)
     finally:
         print_queue.stop()
 

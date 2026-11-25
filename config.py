@@ -1,16 +1,23 @@
 """Keskitetyt asetukset ja konstantit."""
+from typing import Optional
 import math
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_VERSION = "1.1.0"
+BOT_VERSION = "1.2.0"
 
 # Discord
 TOKEN = os.environ.get("DISCORD_TOKEN", "").strip()
+def require_discord_token() -> str:
+    if not TOKEN:
+        raise ValueError("Aseta DISCORD_TOKEN .env-tiedostoon tai ympäristömuuttujaksi.")
+    return TOKEN
+
+
 _raw = os.getenv("TARGET_CHANNEL_ID", "").strip()
-TARGET_CHANNEL_ID: int | None = int(_raw) if _raw else None
+TARGET_CHANNEL_ID: Optional[int] = int(_raw) if _raw else None
 ATTACHMENT_INDEX_CHANNEL_IDS = frozenset(
     int(channel_id.strip())
     for channel_id in os.getenv("ATTACHMENT_INDEX_CHANNEL_IDS", _raw).split(",")
@@ -40,8 +47,8 @@ MAX_QUEUE_SIZE = 5
 # Kuvatiedostopäätteet
 IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
 
-# Oletussäilytys päivinä (365 = 1 vuosi)
-MESSAGE_RETENTION_DAYS = int(os.getenv("MESSAGE_RETENTION_DAYS", "365"))
+# Oletussäilytys päivinä
+MESSAGE_RETENTION_DAYS = int(os.getenv("MESSAGE_RETENTION_DAYS", "").strip() or "30")
 
 UNTRACKED_BOT_MESSAGE_CLEANUP_MODE = os.getenv("UNTRACKED_BOT_MESSAGE_CLEANUP_MODE", "preview").strip().lower()
 if UNTRACKED_BOT_MESSAGE_CLEANUP_MODE not in {"off", "preview", "delete"}:
@@ -81,6 +88,9 @@ OLLAMA_DISCOVERY_TIMEOUT_SECONDS = _ollama_timeout("OLLAMA_DISCOVERY_TIMEOUT_SEC
 OLLAMA_MODEL_TIMEOUT_SECONDS = _ollama_timeout("OLLAMA_MODEL_TIMEOUT_SECONDS", 40)
 OLLAMA_TOTAL_TIMEOUT_SECONDS = _ollama_timeout("OLLAMA_TOTAL_TIMEOUT_SECONDS", 120)
 ENABLE_OLLAMA = _env_bool("ENABLE_OLLAMA", default=False)
+OLLAMA_RECENT_MESSAGES = int(os.getenv("OLLAMA_RECENT_MESSAGES", "").strip() or "12")
+if not 0 <= OLLAMA_RECENT_MESSAGES <= 30:
+    raise ValueError("OLLAMA_RECENT_MESSAGES pitää olla välillä 0–30.")
 OLLAMA_TRACE_ENABLED = _env_bool("OLLAMA_TRACE_ENABLED", default=False)
 OLLAMA_INSTRUCTIONS_FILE = os.getenv("OLLAMA_INSTRUCTIONS_FILE", "").strip()
 OLLAMA_HOSTS = tuple(

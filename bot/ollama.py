@@ -1,5 +1,7 @@
 """Ollama replies to direct Discord mentions."""
+from typing import Optional
 import asyncio
+import json
 from base64 import b64encode
 import re
 from contextlib import AsyncExitStack, asynccontextmanager
@@ -19,7 +21,7 @@ from core.logging import log
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
-_CONTEXT_KEYS = re.compile(r"""["'](viite|roolit|viesti|henkilöt|istunto|aiemmat_vuorot)["']\s*:""")
+_CONTEXT_KEYS = re.compile(r"""["'](viite|roolit|viesti|henkilöt|istunto|aiemmat_vuorot|kanavaviestit)["']\s*:""")
 
 
 def _echoes_internal_context(answer: str) -> bool:
@@ -27,7 +29,7 @@ def _echoes_internal_context(answer: str) -> bool:
     return (
         {"viite", "roolit"} <= keys
         or {"viesti", "henkilöt"} <= keys
-        or "aiemmat_vuorot" in keys
+        or bool({"aiemmat_vuorot", "kanavaviestit"} & keys)
     )
 
 
@@ -140,7 +142,7 @@ class OllamaHosts:
 async def _generate_on_host(
     session: aiohttp.ClientSession, discovery_timeout: aiohttp.ClientTimeout,
     hosts: OllamaHosts, host: str, prompt: str, system_prompt: str, image: str | None,
-    message_id: int | None, models_override: tuple[str, ...] | None,
+    message_id: Optional[int], models_override: tuple[str, ...] | None,
     history: list[dict[str, str]], visited: set[str],
 ) -> tuple[str | None, str | None, int]:
     models = models_override or config.OLLAMA_MODELS
@@ -162,6 +164,8 @@ async def _generate_on_host(
                 "Ollama %s: mallien haku epäonnistui (%s, HTTP %s)",
                 host, type(exc).__name__, getattr(exc, "status", "-"),
             )
+            trace("discovery_error", message_id, host=host, error=type(exc).__name__,
+                  status=getattr(exc, "status", None))
             return None, None, 0
 
     candidates = tuple(
@@ -179,6 +183,12 @@ async def _generate_on_host(
     for model in candidates:
         visited.add(model)
         kind = await hosts.model_kind(session, host, model, discovery_timeout)
+        if kind is None:
+            log.warning(
+                "Ollama %s / %s: mallin kyvyt tuntemattomat | viesti=%s | kuvapyyntö=%s",
+                host, model, message_id, image is not None,
+            )
+            trace("model_capabilities_unknown", message_id, host=host, model=model)
         if kind in {"remote", "missing"} or (image is not None and kind != "vision") or (image is None and kind == "vision"):
             log.info("Ollama %s / %s: ohitettu | mallityyppi=%s | kuvapyyntö=%s",
                      host, model, kind, image is not None)
@@ -205,7 +215,14 @@ async def _generate_on_host(
                 allow_redirects=False,
             ) as response:
                 data = await response.json()
-            raw_answer = data["message"]["content"]
+            reply = data.get("message") if isinstance(data, dict) else None
+            raw_answer = reply.get("content") if isinstance(reply, dict) else None
+            if not isinstance(raw_answer, str):
+                log.warning("Ollama %s / %s: rajapinta palautti virheellisen vastausrakenteen | viesti=%s",
+                            host, model, message_id)
+                trace("model_response_rejected", message_id, host=host, model=model,
+                      reason="invalid_response")
+                continue
             trace("model_response", message_id, host=host, model=model, content=raw_answer,
                   done_reason=data.get("done_reason"), elapsed_seconds=round(monotonic() - started, 3))
             answer = raw_answer.strip()
@@ -222,20 +239,23 @@ async def _generate_on_host(
                 return answer, model, attempts
             log.warning("Ollama %s / %s: ei käyttäjälle tarkoitettua vastaustekstiä", host, model)
             trace("model_response_rejected", message_id, host=host, model=model, reason="empty_reply")
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        except (aiohttp.ClientError, asyncio.TimeoutError, UnicodeError, json.JSONDecodeError) as exc:
+            status = getattr(exc, "status", None)
+            elapsed = round(monotonic() - started, 3)
             log.warning(
-                "Ollama %s / %s: pyyntö epäonnistui (%.1f s, %s, HTTP %s)",
-                host, model, monotonic() - started, type(exc).__name__, getattr(exc, "status", "-"),
+                "Ollama %s / %s: chat-pyyntö epäonnistui | viesti=%s | %.1f s | %s | HTTP %s",
+                host, model, message_id, elapsed, type(exc).__name__, status,
             )
             trace("model_error", message_id, host=host, model=model, error=type(exc).__name__,
-                  status=getattr(exc, "status", None), elapsed_seconds=round(monotonic() - started, 3))
+                  status=status, elapsed_seconds=elapsed)
+
 
     return None, None, attempts
 
 
 async def _generate(
     prompt: str, system_prompt: str, hosts: OllamaHosts, image: str | None = None, *,
-    message_id: int | None = None, preferred: tuple[str, str] | None = None,
+    message_id: Optional[int] = None, preferred: tuple[str, str] | None = None,
     history: list[dict[str, str]] | None = None,
 ) -> tuple[str, tuple[str, str]] | None:
     timeout = aiohttp.ClientTimeout(
@@ -264,8 +284,10 @@ async def _generate(
                 continue
             remaining = [host for host in phase_hosts if not models or models[0] not in visited[host]]
             while remaining:
+                trace("waiting_host", message_id, candidates=list(remaining))
                 async with hosts.reserve(remaining) as host:
                     remaining.remove(host)
+                    trace("host_selected", message_id, host=host)
                     answer, model, host_attempts = await _generate_on_host(
                         session, discovery_timeout, hosts, host, prompt, system_prompt, image,
                         message_id, models, history or [], visited[host],
@@ -273,9 +295,15 @@ async def _generate(
                     attempts += host_attempts
                     if answer and model:
                         return answer, (host, model)
+    trace("models_exhausted", message_id, has_image=image is not None, attempts=attempts)
     if image is not None and not attempts:
         log.warning(
             "Ollama: yhtään kuvia tukevaa mallia ei saatu vahvistettua | viesti=%s | palvelimia=%s",
+            message_id, len(hosts.hosts),
+        )
+    elif not attempts:
+        log.warning(
+            "Ollama: yksikään määritetty palvelin ei tarjonnut käyttökelpoista paikallista tekstimallia | viesti=%s | palvelimia=%s",
             message_id, len(hosts.hosts),
         )
     else:
@@ -296,7 +324,7 @@ class OllamaReplies:
         self._memory = SessionMemory()
         self._system_prompt = "\n\n".join((_system_prompt(), PEOPLE_INSTRUCTIONS, STYLE_INSTRUCTIONS))
 
-    def session_style(self, channel_id: int | None) -> str:
+    def session_style(self, channel_id: Optional[int]) -> str:
         return self._memory.style(channel_id) if channel_id is not None else ""
 
     async def handle(self, message: discord.Message, bot_user_id: int):
@@ -315,7 +343,9 @@ class OllamaReplies:
             )
             return
         log.info("Ollama: maininta hyväksytty | viesti=%s | kanava=%s", message.id, channel_id)
-        trace("discord_input", message.id, channel_id=channel_id, content=message.content,
+        trace("discord_input", message.id, channel_id=channel_id,
+              channel_name=getattr(message.channel, "name", None) if message.guild else None,
+              private=not bool(message.guild), content=message.content,
               attachment_count=len(message.attachments))
         prompt = mention.sub("", message.content).strip()
         images = [attachment for attachment in message.attachments if _is_image(attachment)]
@@ -352,6 +382,7 @@ class OllamaReplies:
         try:
             # Read context after the preceding turn has been sent and recorded.
             if previous is not None:
+                trace("waiting_turn", message.id)
                 await asyncio.shield(previous)
             payload = style = text_target = None
             if images and image is None:
@@ -359,17 +390,29 @@ class OllamaReplies:
                     "Ollama: kuvaliitteet ylittävät kokorajan | viesti=%s | kuvia=%s | raja=%s tavua",
                     message.id, len(images), _MAX_IMAGE_BYTES,
                 )
+                trace("image_error", message.id, reason="Kokoraja ylittyi")
                 answer = "Liitä enintään 8 Mt:n kuva, niin voin yrittää tulkita sen."
             elif prompt:
+                trace("waiting_worker", message.id)
                 async with self._workers:
                     answer, style, payload, text_target = await self._answer(message, prompt, bot_user_id, image)
             else:
                 log.info("Ollama: maininnassa ei ollut kysymystä tai sopivaa kuvaa | viesti=%s", message.id)
                 answer = "Kirjoita kysymys samaan viestiin maininnan kanssa."
-            if await self._reply(message, answer) and payload is not None:
+            sent = await self._reply(message, answer)
+            if sent and payload is not None:
                 self._memory.remember(channel_id, payload, answer, style, text_target)
                 if style:
                     log.info("Ollama: istunnon tyyli päivitetty | kanava=%s", channel_id)
+            trace("finished", message.id, outcome=(
+                "success" if sent and payload is not None else "fallback" if sent else "send_error"
+            ))
+        except asyncio.CancelledError:
+            trace("cancelled", message.id)
+            raise
+        except Exception as exc:
+            trace("failed", message.id, error=type(exc).__name__)
+            raise
         finally:
             self._pending -= 1
             if previous is not None and not previous.done():
@@ -382,6 +425,7 @@ class OllamaReplies:
         image: discord.Attachment | None,
     ) -> tuple[str, str | None, str | None, tuple[str, str] | None]:
         log.info("Ollama: käsittely alkaa | viesti=%s", message.id)
+        trace("preparing", message.id, has_image=image is not None)
         async with AsyncExitStack() as typing:
             try:
                 await typing.enter_async_context(message.channel.typing())
@@ -393,23 +437,27 @@ class OllamaReplies:
                     raw = await asyncio.wait_for(image.read(), timeout=10)
                 except (discord.HTTPException, asyncio.TimeoutError) as exc:
                     log.warning("Ollama: kuvaa ei saatu ladattua | viesti=%s | %s", message.id, type(exc).__name__)
+                    trace("image_error", message.id, error=type(exc).__name__)
                     return "Kuvaa ei saatu ladattua Discordista.", None, None, None
                 if not raw or len(raw) > _MAX_IMAGE_BYTES:
                     log.warning("Ollama: kuvan data hylätty | viesti=%s | tavua=%s", message.id, len(raw))
+                    trace("image_error", message.id, reason="Tyhjä tai liian suuri kuva")
                     return "Kuvan pitää olla enintään 8 Mt ja sisältää kuvadataa.", None, None, None
                 image_data = b64encode(raw).decode("ascii")
                 log.info("Ollama: kuva ladattu | viesti=%s | tavua=%s", message.id, len(raw))
 
-            payload, mentions = await prepare_people(message, prompt, bot_user_id)
+            payload, mentions, recent_count, people_count = await prepare_people(message, prompt, bot_user_id)
             context = self._memory.add_context(message.channel.id, payload)
             history = self._memory.chat_history(message.channel.id)
+            preferred = self._memory.text_target(message.channel.id)
             trace("model_input", message.id, system=self._system_prompt, user=context,
-                  has_image=image_data is not None, history=history)
-            preferred = self._memory.text_target(message.channel.id) if image is None else None
+                  has_image=image_data is not None, history=history, history_turns=len(history) // 2,
+                  recent_messages=recent_count, people_count=people_count,
+                  session_style=self.session_style(message.channel.id), text_target=preferred)
             try:
                 result = await asyncio.wait_for(
                     _generate(context, self._system_prompt, self._hosts, image_data,
-                              message_id=message.id, preferred=preferred, history=history),
+                              message_id=message.id, preferred=preferred if image is None else None, history=history),
                     timeout=config.OLLAMA_TOTAL_TIMEOUT_SECONDS,
                 )
             except asyncio.TimeoutError:
@@ -425,9 +473,10 @@ class OllamaReplies:
             log.warning("Ollama: viesti %s jäi ilman mallin vastausta", message.id)
             if image is not None:
                 return "Ollama ei saanut tulkittua kuvaa. Tarkista lokista, löytyikö kuvaa tukeva malli.", None, None, None
-            return "Ollama ei saanut tällä kertaa muodostettua vastausta.", None, None, None
+            return "Ollama ei saanut muodostettua vastausta. Palvelin voi olla poissa käytöstä tai sopiva paikallinen malli voi puuttua.", None, None, None
         rendered = render_people(answer, mentions)
-        trace("parsed_response", message.id, content=rendered, style=style)
+        trace("parsed_response", message.id, content=rendered, style=style,
+              text_target=target if image is None else None)
         return rendered, style, payload, target if image is None else None
 
     async def _reply(self, message: discord.Message, answer: str) -> bool:

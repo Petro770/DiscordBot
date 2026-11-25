@@ -20,7 +20,7 @@ Tarvitset Python 3.10:n tai uudemman sekä Discord-sovelluksen, jolle on luotu b
 
 2. Ota Discord Developer Portalissa botin **Message Content Intent** käyttöön. Jos käytät bottia palvelimella, kutsu se palvelimelle ja anna sille kohdekanavalla oikeudet nähdä kanava, lukea viestihistoriaa, lähettää viestejä ja liitteitä sekä lisätä reaktioita. `POISTA` tarvitsee palvelinkanavalla myös **Manage Messages** -oikeuden.
 
-3. Kopioi [example.env](example.env) nimellä `.env` komennolla `Copy-Item example.env .env` (jos sinulla ei vielä ole `.env`-tiedostoa). Täytä botin token ja tarvittaessa kohdekanavan tunniste. Mallitiedosto sisältää kaikki projektin käyttämät ympäristöasetukset ja niiden oletusarvot. Botti tarkistaa kohdekanavan käynnistyessään ja käyttää sitä myös `JAA`-komennon kohteena.
+3. Kopioi [example.env](example.env) nimellä `.env` komennolla `Copy-Item example.env .env` (jos sinulla ei vielä ole `.env`-tiedostoa). Täytä botin token ja tarvittaessa kohdekanavan tunniste. Tokenin voi antaa myös ympäristömuuttujana. Pidä token ja paikallinen `.env` yksityisinä. Mallitiedosto sisältää kaikki projektin käyttämät ympäristöasetukset ja niiden oletusarvot. Botti tarkistaa kohdekanavan käynnistyessään ja käyttää sitä myös `JAA`-komennon kohteena.
 
    ```dotenv
    DISCORD_TOKEN=oma_botin_token
@@ -50,6 +50,7 @@ Botti käynnistyy uudelleen, jos se oli käynnissä ennen päivitystä.
 Toiminto tarvitsee Gitin ja Gitillä kloonatun projektin. Päivitys odottaa,
 että medialataus on päättynyt. Paikalliset muutokset ja etähaarasta
 poikkeavat paikalliset commitit pitää käsitellä Gitillä ennen päivitystä.
+Windowsissa päivitys vaatii käytössä olevan Python-ympäristön `pythonw.exe`-tiedoston.
 Jos valittu haara tarvitsee uusia Python-riippuvuuksia, asenna ne
 projektin `install.ps1`-skriptillä.
 
@@ -117,6 +118,23 @@ esimerkiksi PowerShellissä komennolla
 Jos Ollama kuuntelee vain paikallisia yhteyksiä, määritä palvelimella
 `OLLAMA_HOST` kuuntelemaan lähiverkon osoitetta.
 
+Botti hakee oletuksena enintään 12 aiempaa viestiä samasta kanavasta,
+ketjusta tai yksityisviestikeskustelusta ja välittää tekstikatkelmat
+Ollamalle taustatietona. Mukana ovat myös tämän botin omat viestit ja
+Discord-vastausten viittaukset. Nykyisen vastauksen kohde voidaan lisätä
+erikseen, jos se jäi haun ulkopuolelle. Aseta `OLLAMA_RECENT_MESSAGES=0`, jos haluat
+käyttää vain botin omia AI-vuoroja. Asetuksen vaihteluväli on 0–30.
+Haku käyttää botin viestihistorian lukuoikeutta.
+
+### AI-keskustelujen seuranta
+
+Hallintapaneelin **AI-keskustelut…**-ikkunassa näkyvät aktiiviset ja
+viimeisimmät pyynnöt, malliyritykset, aikakatkaisut ja Discord-lähetys.
+Valitse keskustelu ja pyyntö nähdäksesi aikajanan. **Kopioi vianetsintätiedot**
+kopioi valitun pyynnön tapahtumat ilman viestitekstejä. Tekstijäljitys näyttää
+mallin syötteen, raakavastaukset ja lähetetyn tekstin, kun
+`OLLAMA_TRACE_ENABLED=true`. Näkymä kerää tapahtumia paneelin käynnistyksestä.
+
 ### Ollaman jäljitysloki
 
 Aseta `OLLAMA_TRACE_ENABLED=true` tiedostoon `.env` ja käynnistä botti
@@ -183,7 +201,7 @@ kuvatulostuksesta ja liiteindeksoinnista.
 
 Ollama voi muotoilla keskusteluun sopivan lyhyen tyyliohjeen samalla,
 kun se vastaa. Botti säilyttää kanavaa tai yksityisviestikeskustelua kohti
-uusimman tyyliohjeen ja lyhyet katkelmat kolmesta viimeisestä onnistuneesta
+uusimman tyyliohjeen ja lyhyet katkelmat kahdeksasta viimeisestä onnistuneesta
 AI-vuorosta. Botti lähettää katkelmat Ollamalle erillisinä käyttäjän ja
 avustajan viesteinä, jotta malli voi jatkaa keskustelua. Muisti tyhjenee, kun botti
 käynnistetään uudelleen.
@@ -272,6 +290,10 @@ Liitteet ladataan väliaikaisesti sormenjälkien laskemista varten.
 `Channels/attachments.sqlite3` sisältää indeksin ja historiaskannauksen etenemisen.
 
 ## Botin ajastamattomien kanavaviestien siivous
+
+Botin seurattujen viestien oletussäilytys on 30 päivää, kun
+`MESSAGE_RETENTION_DAYS` puuttuu tai on tyhjä. Voit asettaa esimerkiksi
+`MESSAGE_RETENTION_DAYS=365`, jos haluat säilyttää vuoden oletuksen.
 
 Taustasiivous etsii botin omia viestejä, joilta puuttuu JSONissa poistoaika.
 Oletuksena käytetään `TARGET_CHANNEL_ID`-kanavaa. Esikatselu kirjaa lokiin

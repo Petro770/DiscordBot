@@ -1,4 +1,5 @@
 """Opt-in local JSONL trace for diagnosing Discord replies."""
+from typing import Optional
 import json
 import logging
 from datetime import datetime, timezone
@@ -12,6 +13,11 @@ from core.logging import log
 _trace = logging.getLogger("ollama.trace")
 _trace.propagate = False
 _trace.setLevel(logging.INFO)
+
+monitor_log = logging.getLogger("ollama.monitor")
+monitor_log.propagate = False
+monitor_log.setLevel(logging.INFO)
+TEXT_FIELDS = {"content", "system", "user", "history"}
 
 
 def setup_trace():
@@ -27,8 +33,8 @@ def setup_trace():
     log.info("Ollama: jäljitysloki käytössä | tiedosto=%s", path)
 
 
-def trace(event: str, message_id: int | None, **fields):
-    if not _trace.handlers:
+def trace(event: str, message_id: Optional[int], **fields):
+    if not (_trace.handlers or monitor_log.handlers):
         return
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -36,4 +42,10 @@ def trace(event: str, message_id: int | None, **fields):
         "message_id": message_id,
         **fields,
     }
-    _trace.info("%s", json.dumps(entry, ensure_ascii=False))
+    if monitor_log.handlers:
+        visible = entry if config.OLLAMA_TRACE_ENABLED else {
+            key: value for key, value in entry.items() if key not in TEXT_FIELDS
+        }
+        monitor_log.info(event, extra={"ollama_event": visible})
+    if _trace.handlers:
+        _trace.info("%s", json.dumps(entry, ensure_ascii=False))

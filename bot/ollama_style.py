@@ -21,7 +21,7 @@ sävyä tai ilmaisutapaa, älä sisällytä henkilötietoja tai viestien sisält
 
 _MAX_STYLE = 160
 _MAX_TURN = 350
-_MAX_EXCHANGES = 3
+_MAX_EXCHANGES = 8
 _MAX_CHANNELS = 128
 _STYLE_MARKER = re.compile(
     r"\[tyyli:[ \t]*((?:\[[^\[\]\r\n]*\]|[^\[\]\r\n])*)\]",

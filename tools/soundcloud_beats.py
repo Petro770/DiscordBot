@@ -1,4 +1,5 @@
 """Estimate a steady beat grid from the attack envelope of a downloaded track."""
+from typing import Optional
 from array import array
 from dataclasses import dataclass
 import math
@@ -109,7 +110,7 @@ def estimate_beat_grid(envelope: array, *, relaxed: bool = False) -> BeatGrid | 
     return BeatGrid(60 * rate / period, beats)
 
 
-def estimate_downbeat_phase(envelope: array, beats: tuple[float, ...]) -> int | None:
+def estimate_downbeat_phase(envelope: array, beats: tuple[float, ...]) -> Optional[int]:
     """Find a strongly repeated four-beat accent in the low-frequency attacks."""
     bar_count = len(beats) // 4
     if bar_count < 9:

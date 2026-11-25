@@ -1,3 +1,4 @@
+import subprocess
 import unittest
 from unittest.mock import Mock, patch
 from array import array
@@ -145,8 +146,13 @@ class SoundCloudVideoSettingsTests(unittest.TestCase):
              patch("tools.soundcloud_video.Timer", side_effect=timer), \
              patch("tools.soundcloud_video.subprocess.Popen", return_value=context), \
              patch("tools.soundcloud_video._wave_frames", side_effect=frames):
-            _encode_video(["ffmpeg"], (array("f", [1] * 120),), None,
-                          SoundCloudVideoSettings(encode_timeout=30))
+            args = (["ffmpeg"], (array("f", [1] * 120),), None,
+                    SoundCloudVideoSettings(encode_timeout=30))
+            if ticks == (31,):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    _encode_video(*args)
+            else:
+                _encode_video(*args)
         return process, timers
 
     def test_watchdog_allows_long_render_with_progress(self):

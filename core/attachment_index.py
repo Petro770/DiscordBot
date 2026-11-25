@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from heapq import nsmallest
 from pathlib import Path
 import sqlite3
-from typing import BinaryIO
+from typing import BinaryIO, Optional
 
 import imagehash
 from PIL import Image, ImageOps
@@ -21,8 +21,8 @@ class Fingerprint:
     sha256: bytes
     phash: bytes | None = None
     color_grid: bytes | None = None
-    width: int | None = None
-    height: int | None = None
+    width: Optional[int] = None
+    height: Optional[int] = None
 
 
 def fingerprint(file: BinaryIO, digest: bytes) -> Fingerprint:
@@ -152,7 +152,7 @@ class AttachmentIndex:
 
     def repost_ranks(
         self, author_id: int, hashes: list[bytes]
-    ) -> tuple[int | None, dict[bytes, int]]:
+    ) -> tuple[Optional[int], dict[bytes, int]]:
         """Rank known authors across channels and per exact attachment hash."""
         placeholders = ", ".join("?" for _ in hashes)
         with closing(sqlite3.connect(self.path)) as db:
@@ -267,7 +267,7 @@ class AttachmentIndex:
             examples.setdefault(author_id, []).append((original_id, repost_count))
         return examples
 
-    def history_position(self, channel_id: int) -> int | None:
+    def history_position(self, channel_id: int) -> Optional[int]:
         with closing(sqlite3.connect(self.path)) as db:
             row = db.execute(
                 "SELECT message_id FROM history_progress WHERE channel_id = ?",
@@ -285,7 +285,7 @@ class AttachmentIndex:
 
     def find(
         self, channel_id: int, image: Fingerprint, *,
-        before_message_id: int | None = None, limit: int = 10,
+        before_message_id: Optional[int] = None, limit: int = 10,
         visual_threshold: float = VISUAL_MATCH_THRESHOLD,
     ) -> list[Match]:
         params = {
