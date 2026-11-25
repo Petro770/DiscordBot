@@ -19,6 +19,7 @@ from tools.download_progress import ProgressReader
 from tools.download_progress_widget import DownloadProgressWidget
 from tools.git_update import GitUpdate, UpdateError
 from tools.git_update_dialog import GitUpdateDialog
+from tools.ai_monitor import AiMonitor
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
@@ -160,6 +161,7 @@ class BotManagerApp(QMainWindow):
         self._version_timer = QTimer(self)
         self._version_timer.setSingleShot(True)
         self._version_timer.timeout.connect(self._version_check.kill)
+        self._ai_monitor = AiMonitor(self)
         self.setup_ui()
         self.notification_sounds = NotificationSounds(self.settings, self)
 
@@ -225,6 +227,10 @@ class BotManagerApp(QMainWindow):
         self.update_button.clicked.connect(self._check_version)
         layout.addWidget(self.update_button)
 
+        ai_button = QPushButton("AI-keskustelut…")
+        ai_button.clicked.connect(self._show_ai_monitor)
+        layout.addWidget(ai_button)
+
         self.clipboard_checkbox = QCheckBox("Seuraa leikepöydän medialinkkejä (150 MB)")
         self.clipboard_checkbox.toggled.connect(self._clipboard_toggled)
         layout.addWidget(self.clipboard_checkbox)
@@ -253,6 +259,11 @@ class BotManagerApp(QMainWindow):
         self.download_status = QLabel()
         self.download_status.setWordWrap(True)
         layout.addWidget(self.download_status)
+
+    def _show_ai_monitor(self):
+        self._ai_monitor.show()
+        self._ai_monitor.raise_()
+        self._ai_monitor.activateWindow()
 
     def _check_version(self):
         try:

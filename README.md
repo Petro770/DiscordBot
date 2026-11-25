@@ -111,6 +111,15 @@ esimerkiksi PowerShellissä komennolla
 Jos Ollama kuuntelee vain paikallisia yhteyksiä, määritä palvelimella
 `OLLAMA_HOST` kuuntelemaan lähiverkon osoitetta.
 
+### AI-keskustelujen seuranta
+
+Hallintapaneelin **AI-keskustelut…**-ikkunassa näkyvät aktiiviset ja
+viimeisimmät pyynnöt, malliyritykset, aikakatkaisut ja Discord-lähetys.
+Valitse keskustelu ja pyyntö nähdäksesi aikajanan. **Kopioi vianetsintätiedot**
+kopioi valitun pyynnön tapahtumat ilman viestitekstejä. Tekstijäljitys näyttää
+mallin syötteen, raakavastaukset ja lähetetyn tekstin, kun
+`OLLAMA_TRACE_ENABLED=true`. Näkymä kerää tapahtumia paneelin käynnistyksestä.
+
 ### Ollaman jäljitysloki
 
 Aseta `OLLAMA_TRACE_ENABLED=true` tiedostoon `.env` ja käynnistä botti
