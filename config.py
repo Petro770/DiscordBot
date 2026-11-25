@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_VERSION = "1.0.7"
+BOT_VERSION = "1.1.0"
 
 # Discord
 TOKEN = os.environ.get("DISCORD_TOKEN", "").strip()

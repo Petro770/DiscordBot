@@ -58,6 +58,18 @@
         {"type": "feat", "text": "Viestien automaattinen poisto: bot seuraa lähettämiansa viestejä (DM/ ja Channels/ -kansiot) ja poistaa ne oletusarvoisesti 365 päivän kuluttua."},
         {"type": "feat", "text": "UNOHDAMINUT-komento: poistaa kaiken botin tallentaman käyttäjästä – kaikki DM-viestit Discordista, tracking-tiedostot ja käyttäjäasetukset."}
       ]
+    },
+    {
+      "version": "1.1.0",
+      "date": "2026-11-25",
+      "changes": [
+        {"type": "feat", "text": "Botti voi vastata mainintoihin lähiverkon Ollama-malleilla, jatkaa keskustelua ja tulkita kuvaliitteitä."},
+        {"type": "feat", "text": "Hallintapaneelissa voi tarkistaa Git-version, valita haaran ja päivittää botin."},
+        {"type": "feat", "text": "Leikepöytälataukset ja SoundCloud-aaltomuotovideot saivat asetukset, esikatselun ja latauksen tilan hallintapaneeliin."},
+        {"type": "feat", "text": "Kanavan liiteindeksi tunnistaa kuvakopioita ja uudelleenlähetyksiä. Varoitustavan voi valita käyttäjäkohtaisesti."},
+        {"type": "feat", "text": "AliExpress-tuotelinkeistä voi näyttää saatavilla olevat tuotetiedot Discordissa."},
+        {"type": "improve", "text": "Botin aiempia ajastamattomia kanavaviestejä voi etsiä ja siivota asetusten mukaan."}
+      ]
     }
   ]
 }
