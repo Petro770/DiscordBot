@@ -8,11 +8,13 @@ from unittest.mock import Mock, patch
 from PyQt5.QtCore import QProcess
 from gui_launcher import BotManagerApp
 from tools.notification_sounds import NotificationSounds
+from tools.download_progress import ProgressReader
 
 
 class ClipboardNotificationTests(unittest.TestCase):
     def manager(self, directory, enabled=True, stderr=b""):
         manager = SimpleNamespace(
+            _rendered_video=None, _progress_reader=ProgressReader(), settings=Mock(),
             _download_dir=directory, _last_url="https://soundcloud.com/test/track",
             download_process=Mock(), download_status=Mock(), _append_log=Mock(),
             notification_sounds=Mock(), tray_icon=Mock(), clipboard=Mock(),
@@ -40,6 +42,32 @@ class ClipboardNotificationTests(unittest.TestCase):
             BotManagerApp._download_finished(manager, 0, QProcess.NormalExit)
             manager.clipboard.setMimeData.assert_not_called()
             manager.notification_sounds.play.assert_called_once_with("finished")
+
+    def test_video_metadata_is_optional_for_success(self):
+        for metadata in (
+            b'{"stage":"soundcloud_video","ffmpeg":"ffmpeg"}',
+            b'{"stage":"soundcloud_video","ffmpeg":"ffmpeg","duration":10,"fps":30}',
+        ):
+            with self.subTest(metadata=metadata), tempfile.TemporaryDirectory() as folder:
+                directory = Path(folder)
+                video = directory / "media.mp4"
+                video.write_bytes(b"video")
+                manager = self.manager(directory)
+                manager.download_process.readAllStandardOutput.return_value = (
+                    b"CLIPBOARD_PROGRESS=" + metadata + b"\n"
+                )
+                manager._read_download_progress = lambda: BotManagerApp._read_download_progress(manager)
+
+                BotManagerApp._download_finished(manager, 0, QProcess.NormalExit)
+
+                manager.clipboard.setMimeData.assert_called_once()
+                manager.notification_sounds.play.assert_called_once_with("finished")
+                if b'"fps"' in metadata:
+                    manager.settings.setValue.assert_called_once_with(
+                        "clipboard/lastSoundCloudVideo", [str(video), "ffmpeg", "10", "30"],
+                    )
+                else:
+                    manager.settings.setValue.assert_not_called()
 
     def test_failure_and_invalid_output(self):
         for exit_code, status in ((1, QProcess.NormalExit), (0, QProcess.NormalExit), (-1, QProcess.CrashExit)):

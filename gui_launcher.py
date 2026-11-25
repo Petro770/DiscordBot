@@ -285,7 +285,8 @@ class BotManagerApp(QMainWindow):
             if event["stage"] == "preview":
                 self.download_progress.update_preview(event.get("image"))
             elif event["stage"] == "soundcloud_video":
-                self._rendered_video = event
+                if all(event.get(key) is not None for key in ("ffmpeg", "duration", "fps")):
+                    self._rendered_video = event
             else:
                 self.download_progress.update_progress(event)
 
