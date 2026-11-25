@@ -8,15 +8,16 @@ from pathlib import Path
 from uuid import uuid4
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
-    QCheckBox, QPushButton, QSystemTrayIcon, QTextEdit, QMenu
+    QCheckBox, QPushButton, QSystemTrayIcon, QTextEdit, QMenu, QInputDialog, QMessageBox
 )
 from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import QMimeData, QObject, QProcess, QProcessEnvironment, QSettings, QThread, QUrl, pyqtSignal, pyqtSlot
+from PyQt5.QtCore import QMimeData, QObject, QProcess, QProcessEnvironment, QSettings, QThread, QTimer, QUrl, pyqtSignal, pyqtSlot
 
 from tools.clipboard_download import MAX_FILE_BYTES, clipboard_url
 from tools.notification_sounds import NotificationSounds
 from tools.download_progress import ProgressReader
 from tools.download_progress_widget import DownloadProgressWidget
+from tools.git_update import GitUpdate, UpdateError
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
@@ -147,12 +148,20 @@ class BotManagerApp(QMainWindow):
         super().__init__()
         self.setWindowTitle("Bot-Hallintapaneeli")
         self.setGeometry(100, 100, 500, 350)
+        self._git_update = GitUpdate(PROJECT_DIR)
+        self._version_check = QProcess(self)
+        self._version_check.setWorkingDirectory(str(PROJECT_DIR))
+        git_environment = QProcessEnvironment.systemEnvironment()
+        git_environment.insert("GIT_TERMINAL_PROMPT", "0")
+        self._version_check.setProcessEnvironment(git_environment)
+        self._version_check.finished.connect(self._version_check_finished)
+        self._version_check.errorOccurred.connect(self._version_check_error)
+        self._version_timer = QTimer(self)
+        self._version_timer.setSingleShot(True)
+        self._version_timer.timeout.connect(self._version_check.kill)
         self.setup_ui()
         self.notification_sounds = NotificationSounds(self.settings, self)
 
-        self.discord_client = create_bot()
-        self.print_queue = PrintQueue()
-        register_events(self.discord_client, self.print_queue)
         self._is_running = False
         self.worker = None
         self.worker_thread = None
@@ -211,6 +220,10 @@ class BotManagerApp(QMainWindow):
         self.stop_button.clicked.connect(self.stop_bot_service)
         layout.addWidget(self.stop_button)
 
+        self.update_button = QPushButton("Tarkista versio…")
+        self.update_button.clicked.connect(self._check_version)
+        layout.addWidget(self.update_button)
+
         self.clipboard_checkbox = QCheckBox("Seuraa leikepöydän medialinkkejä (150 MB)")
         self.clipboard_checkbox.toggled.connect(self._clipboard_toggled)
         layout.addWidget(self.clipboard_checkbox)
@@ -239,6 +252,91 @@ class BotManagerApp(QMainWindow):
         self.download_status = QLabel()
         self.download_status.setWordWrap(True)
         layout.addWidget(self.download_status)
+
+    def _check_version(self):
+        try:
+            self._git_update.current()
+        except UpdateError as exc:
+            QMessageBox.warning(self, "Git-päivitys", str(exc))
+            return
+        self.update_button.setEnabled(False)
+        self.update_button.setText("Tarkistetaan versiota…")
+        self._version_timer.start(60000)
+        self._version_check.start(
+            "git", ["fetch", "--prune", "--no-tags", "origin", "+refs/heads/*:refs/remotes/origin/*"]
+        )
+
+    def _restore_update_button(self):
+        self._version_timer.stop()
+        self.update_button.setText("Tarkista versio…")
+        self.update_button.setEnabled(True)
+
+    def _version_check_error(self, error):
+        if error == QProcess.FailedToStart:
+            self._restore_update_button()
+            QMessageBox.warning(self, "Git-päivitys", "Git-komentoa ei saatu käynnistettyä.")
+
+    def _version_check_finished(self, exit_code, exit_status):
+        self._restore_update_button()
+        if exit_code != 0 or exit_status != QProcess.NormalExit:
+            details = bytes(self._version_check.readAllStandardError()).decode("utf-8", errors="replace").strip()
+            QMessageBox.warning(self, "Git-päivitys", details or "Versiotarkistus keskeytyi tai aikakatkaistiin.")
+            return
+
+        try:
+            current, short_commit = self._git_update.current()
+            branches = self._git_update.branches()
+            if not branches:
+                raise UpdateError("Origin-etävarastosta ei löytynyt haaroja.")
+            labels = [f"{name} ({commit[:8]})" for name, commit in branches.items()]
+            names = list(branches)
+            default_branch = current if current in branches else "main"
+            default = names.index(default_branch) if default_branch in branches else 0
+            label, accepted = QInputDialog.getItem(
+                self, "Git-päivitys",
+                f"Nykyinen versio: {current or 'irrotettu HEAD'} ({short_commit}). Valitse haara:",
+                labels, default, False,
+            )
+            if not accepted:
+                return
+            branch = names[labels.index(label)]
+            commit = branches[branch]
+            if not self._git_update.check(branch, commit):
+                QMessageBox.information(self, "Git-päivitys", "Valittu haara on ajan tasalla.")
+                return
+            if QMessageBox.question(
+                self, "Git-päivitys", f"Päivitetäänkö haaraan {branch} ja käynnistetäänkö sovellus uudelleen?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            ) != QMessageBox.Yes:
+                return
+            if self.download_process.state() != QProcess.NotRunning:
+                raise UpdateError("Medialataus on kesken. Odota sen valmistumista ennen päivitystä.")
+            self._apply_update(branch, commit)
+        except UpdateError as exc:
+            QMessageBox.warning(self, "Git-päivitys", str(exc))
+
+    def _apply_update(self, branch, commit):
+        self._git_update.check(branch, commit)
+        was_running = self._is_running
+        self.stop_bot_service()
+        if self.worker_thread and self.worker_thread.isRunning():
+            raise UpdateError("Botin taustasäie ei pysähtynyt. Päivitys keskeytettiin.")
+        try:
+            self._git_update.apply(branch, commit)
+        except UpdateError:
+            if was_running:
+                self.start_bot_service()
+            raise
+        arguments = [str(PROJECT_DIR / "gui_launcher.py"), "--show-after-update"]
+        if not was_running:
+            arguments.append("--bot-stopped")
+        python = Path(sys.executable)
+        if python.name.lower() == "python.exe" and python.with_name("pythonw.exe").is_file():
+            python = python.with_name("pythonw.exe")
+        started, _ = QProcess.startDetached(str(python), arguments, str(PROJECT_DIR))
+        if not started:
+            raise UpdateError("Päivitys tehtiin, mutta hallintapaneelin uudelleenkäynnistys epäonnistui. Avaa se uudelleen.")
+        self.quit_application()
 
     def _open_soundcloud_settings(self):
         from tools.soundcloud_settings_dialog import SoundCloudSettingsDialog
@@ -364,6 +462,9 @@ class BotManagerApp(QMainWindow):
         self._append_log("Botin käynnistys aloitettu.")
         self._set_status_text("Käynnistyy...")
 
+        self.discord_client = create_bot()
+        self.print_queue = PrintQueue()
+        register_events(self.discord_client, self.print_queue)
         self.worker = BotWorker(self.discord_client, self.print_queue)
         self.worker_thread = QThread(self)
         self.worker.moveToThread(self.worker_thread)
@@ -372,7 +473,9 @@ class BotManagerApp(QMainWindow):
         self.worker.status_signal.connect(self.status_update)
         self.worker.error_signal.connect(self.handle_error)
         self.worker_thread.started.connect(self.worker.run_bot)
+        self.worker_thread.finished.connect(self.worker.deleteLater)
         self.worker_thread.finished.connect(self._on_thread_finished)
+        self.worker_thread.finished.connect(self.worker_thread.deleteLater)
 
         self.worker_thread.start()
         self._is_running = True
@@ -402,12 +505,14 @@ class BotManagerApp(QMainWindow):
         self._set_status_text("Pysäytetty")
 
     def _on_thread_finished(self):
+        if self.sender() is not self.worker_thread:
+            return
         self._append_log("Taustasäie on päättynyt.")
-        if self.worker:
-            self.worker.deleteLater()
-        if self.worker_thread:
-            self.worker_thread.deleteLater()
         self._is_running = False
+        self.worker = None
+        self.worker_thread = None
+        self.start_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
 
     def _on_tray_icon_activated(self, reason):
         if reason == QSystemTrayIcon.DoubleClick:
@@ -429,6 +534,10 @@ class BotManagerApp(QMainWindow):
         )
 
     def quit_application(self):
+        if self._version_check.state() != QProcess.NotRunning:
+            self._version_check.blockSignals(True)
+            self._version_check.kill()
+            self._version_check.waitForFinished(2000)
         if self.download_process.state() != QProcess.NotRunning:
             self.clipboard_checkbox.setChecked(False)
             self.download_process.finished.disconnect(self._download_finished)
@@ -455,8 +564,12 @@ def main():
     action_quit.triggered.connect(manager.quit_application)
     manager.tray_icon.setContextMenu(tray_menu)
 
-    manager.start_bot_service()
-    manager.hide()
+    if "--bot-stopped" not in sys.argv:
+        manager.start_bot_service()
+    if "--show-after-update" in sys.argv:
+        manager.show()
+    else:
+        manager.hide()
     manager.tray_icon.show()
 
     sys.exit(app.exec_())

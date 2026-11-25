@@ -32,6 +32,20 @@ Tarvitset Python 3.10:n tai uudemman sekä Discord-sovelluksen, jolle on luotu b
 
    Jos PowerShell estää skriptin suorituskäytännön vuoksi, voit käynnistää sen erillisessä PowerShell-prosessissa komennolla `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`. Vaihda tiedoston nimeksi `.\launch.ps1` käynnistystä varten.
 
+## Päivittäminen hallintapaneelista
+
+Avaa hallintapaneeli ja paina **Tarkista versio…**. Paneeli hakee
+`origin`-etävaraston haarat ja näyttää nykyisen haaran sekä commitin.
+Valitse haara ja vahvista päivitys. Paneeli pysäyttää botin, päivittää
+Git-työkopion ja avaa itsensä uudelleen samalla Python-ympäristöllä.
+Botti käynnistyy uudelleen, jos se oli käynnissä ennen päivitystä.
+
+Toiminto tarvitsee Gitin ja Gitillä kloonatun projektin. Päivitys odottaa,
+että medialataus on päättynyt. Paikalliset muutokset ja etähaarasta
+poikkeavat paikalliset commitit pitää käsitellä Gitillä ennen päivitystä.
+Jos valittu haara tarvitsee uusia Python-riippuvuuksia, asenna ne
+projektin `install.ps1`-skriptillä.
+
 ## Käyttö Discordissa
 
 Lähetä botille tuettu medialinkki tai kuva yksityisviestinä tai määritetyllä palvelinkanavalla. Kirjoita `OHJE`, niin saat komentolistan Discordissa.
