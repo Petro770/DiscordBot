@@ -22,6 +22,7 @@ _LABELS = {
     "host_selected": "Palvelin valittu",
     "discovery_error": "Mallilistan haku epäonnistui",
     "image_error": "Kuvan valmistelu epäonnistui",
+    "model_capabilities_unknown": "Mallin kykyjä ei voitu vahvistaa",
     "model_skipped": "Malli ohitettu",
     "model_attempt": "Odottaa mallin vastausta",
     "model_response": "Malli vastasi",

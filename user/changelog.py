@@ -75,15 +75,20 @@ def load_changelog() -> list[ChangelogEntry]:
 
 def parse_version(v: str) -> tuple[int, ...]:
     """'1.2.3' → (1, 2, 3)"""
-    parts = v.lstrip("v").split(".")
-    return tuple(int(p) for p in parts if p.isdigit())
+    if not isinstance(v, str):
+        return ()
+    parts = v.strip().removeprefix("v").split(".")
+    if not all(part.isascii() and part.isdecimal() for part in parts):
+        return ()
+    try:
+        return tuple(int(part) for part in parts)
+    except ValueError:
+        return ()
 
 def version_is_newer(current: str, stored: str) -> bool:
     """Palauttaa True jos current on uudempi kuin stored."""
-    try:
-        return parse_version(current) > parse_version(stored)
-    except (ValueError, TypeError):
-        return False
+    current_parts, stored_parts = parse_version(current), parse_version(stored)
+    return bool(current_parts and stored_parts and current_parts > stored_parts)
 
 # ============================================================
 # CHANGLOGIN MUOTOILU

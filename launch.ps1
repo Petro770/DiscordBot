@@ -14,6 +14,11 @@ if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
 
 Push-Location -LiteralPath $PSScriptRoot
 try {
+    & $python -c 'import sys; sys.exit(sys.version_info < (3, 10))'
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Python 3.10 or newer is required. Recreate .venv with a supported Python.'
+    }
+
     & $python -m pip install --dry-run --no-index --disable-pip-version-check --quiet -r $requirements
     if ($LASTEXITCODE -ne 0) {
         throw 'Required packages are missing or incompatible. Run install.ps1.'

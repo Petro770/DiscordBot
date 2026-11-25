@@ -71,8 +71,9 @@ async def extract_images_reddit(
     json_url = f"{base_url}.json?raw_json=1"
 
     cache_key = f"reddit:{subreddit}:{post_id}"
-    if cache_key in _proxy_cache:
-        ts, cached = _proxy_cache[cache_key]
+    entry = _proxy_cache.get(cache_key)
+    if entry is not None:
+        ts, cached = entry
         if time.time() - ts < CACHE_TTL:
             return cached if cached else []
 
@@ -248,8 +249,9 @@ async def extract_from_message_links(
 
 def _evict_cache():
     now = time.time()
-    for k in list(_proxy_cache.keys()):  # list copy
-        if now - _proxy_cache[k][0] > CACHE_TTL:
-            _proxy_cache.pop(k, None)
+    for key in list(_proxy_cache):
+        entry = _proxy_cache.get(key)
+        if entry is not None and now - entry[0] > CACHE_TTL:
+            _proxy_cache.pop(key, None)
 
 

@@ -3,7 +3,7 @@ import asyncio
 import os
 import random
 import re
-from typing import Callable
+from typing import Callable, Optional
 from dataclasses import dataclass
 from typing import Optional
 
@@ -97,7 +97,7 @@ def init_handlers(bot: discord.Client, print_queue: PrintQueue):
     _print_queue = print_queue
     _bot = bot
 
-async def _remove_status(msg: discord.Message | None, delay: int | None = None):
+async def _remove_status(msg: discord.Message | None, delay: Optional[int] = None):
     if msg is None:
         return
     try:
@@ -296,7 +296,7 @@ async def cleanup_pending():
 # VIDEO-KÄSITTELY (siirretty bot.py:stä)
 # ============================================================
 
-async def handle_youtube(message: discord.Message, url: str, delete_original: bool = False,forward_channel_id: int | None = None):
+async def handle_youtube(message: discord.Message, url: str, delete_original: bool = False,forward_channel_id: Optional[int] = None):
     from downloaders.youtube import download_video, YOUTUBE_QUALITY_STEPS
     from core.models import NonRetryableError
 
@@ -391,7 +391,7 @@ async def handle_youtube(message: discord.Message, url: str, delete_original: bo
     await s._update_status("⚠️ Lataus epäonnistui kaikilla kokeilluilla laadulla.")
     await s.send("⚠️ Lataus epäonnistui.", delete_after=REPLY_DELETE_AFTER)
 
-async def handle_instagram(message: discord.Message, url: str, delete_original: bool = False,forward_channel_id: int | None = None):
+async def handle_instagram(message: discord.Message, url: str, delete_original: bool = False,forward_channel_id: Optional[int] = None):
     from downloaders.instagram import download_instagram
     from core.models import NonRetryableError
 
@@ -444,7 +444,7 @@ async def handle_instagram(message: discord.Message, url: str, delete_original: 
         if os.path.exists(filepath):
             os.unlink(filepath)
 
-async def handle_x(message: discord.Message, url: str, delete_original: bool = False,forward_channel_id: int | None = None,):
+async def handle_x(message: discord.Message, url: str, delete_original: bool = False,forward_channel_id: Optional[int] = None,):
     from downloaders.x import download_x
     from core.models import NonRetryableError
 
@@ -495,7 +495,7 @@ async def handle_x(message: discord.Message, url: str, delete_original: bool = F
         if os.path.exists(filepath):
             os.unlink(filepath)
 
-async def handle_tiktok(message: discord.Message, url: str, delete_original: bool = False,forward_channel_id: int | None = None):
+async def handle_tiktok(message: discord.Message, url: str, delete_original: bool = False,forward_channel_id: Optional[int] = None):
     from downloaders.tiktok import download_tiktok
     from core.models import NonRetryableError
 
@@ -547,7 +547,7 @@ async def handle_tiktok(message: discord.Message, url: str, delete_original: boo
         if os.path.exists(filepath):
             os.unlink(filepath)
 
-async def handle_twitch(message: discord.Message, url: str, delete_original: bool = False,forward_channel_id: int | None = None):
+async def handle_twitch(message: discord.Message, url: str, delete_original: bool = False,forward_channel_id: Optional[int] = None):
     from downloaders.twitch import download_twitch
     from core.models import NonRetryableError
 
@@ -601,7 +601,7 @@ async def handle_soundcloud(
     message: discord.Message,
     url: str,
     delete_original: bool = False,
-    forward_channel_id: int | None = None,
+    forward_channel_id: Optional[int] = None,
     *,
     audio_only: bool = False,
 ):
@@ -685,7 +685,7 @@ async def handle_aliexpress(
     message: discord.Message,
     url: str,
     delete_original: bool = False,
-    forward_channel_id: int | None = None,
+    forward_channel_id: Optional[int] = None,
 ) -> None:
     fields = await fetch_product_metadata(await get_session(), url)
     title = fields.get("og:title")
@@ -862,17 +862,17 @@ async def route_message(message: discord.Message, names: list[str]):
 async def _send_and_cleanup(message: discord.Message,delete_original: bool,content: str,file: discord.File | None = None,):
     """Lähetä viesti + poista alkuperäinen jos pyydetty."""
     s = Send(message, delete_original)
-    await s.send(content, file=file)
-    await s.delete_original()
+    if await s.send(content, file=file) is not None:
+        await s.delete_original()
 
 class Send:
     """Abstrahoi reply vs send+mention."""
 
     # --- Lisää nämä rivit luokan tasolle ---
-    forward_channel_id: int | None
+    forward_channel_id: Optional[int]
     _file_path: str | None
 
-    def __init__(self,message: discord.Message,delete_original: bool = False,forward_channel_id: int | None = None, ):
+    def __init__(self,message: discord.Message,delete_original: bool = False,forward_channel_id: Optional[int] = None, ):
         self.message = message
         self.channel = message.channel
         self.user = message.author
@@ -880,6 +880,7 @@ class Send:
         self.forward_channel_id = forward_channel_id
         self._status_msg: discord.Message | None = None
         self._file_path: str | None = None
+        self._delivered = False
 
     async def send_status(self, content: str) -> None:
         """Lähetä tilaviesti jonon kautta (rate-limited + viestisuojeltu)."""
@@ -931,7 +932,8 @@ class Send:
                 fp = getattr(getattr(file, "fp", None), "name", None)
                 self._file_path = fp if isinstance(fp, str) else None
             result_msg = await self._do_send(content, file=file, silent=silent, delete_after=delete_after, embed=embed)
-            if self.forward_channel_id and result_msg is not None:
+            self._delivered = result_msg is not None
+            if self.forward_channel_id and self._delivered:
                 await self._forward_to_channel(content, file, embed=embed)
             return result_msg
 
@@ -965,7 +967,7 @@ class Send:
         except Exception as e:
             log.warning("Forward kanavalle epäonnistui: %s", e)
 
-    async def _do_send(self, content: str, file=None, silent=True, delete_after=None, *, embed=None) -> discord.Message:
+    async def _do_send(self, content: str, file=None, silent=True, delete_after=None, *, embed=None) -> discord.Message | None:
         kwargs = {}
         if embed is not None:
             kwargs["embed"] = embed
@@ -979,6 +981,10 @@ class Send:
             kwargs["silent"] = silent
             result = await self.message.reply(content, file=file, **kwargs)
 
+        if result is None:
+            log.warning("Discord-lähetys ei palauttanut viestiä | alkuperäinen=%s", self.message.id)
+            return None
+
         # Rekisteröi viesti poistolokiin
         from user.tracker import register_message
         register_message(result)
@@ -991,14 +997,19 @@ class Send:
             return
         try:
             await self._status_msg.delete()
-        except Exception:
+        except discord.NotFound:
             pass
+        except discord.HTTPException as exc:
+            log.warning("Tilaviestin poisto epäonnistui | alkuperäinen=%s | HTTP=%s", self.message.id, exc.status)
         self._status_msg = None
 
     async def delete_original(self) -> None:
         """Poista alkuperäinen viesti ja siivoa tilaviestin."""
         await self._cleanup_status()
         if not self.should_delete_original:
+            return
+        if not self._delivered:
+            log.warning("Alkuperäinen viesti säilytettiin, koska vastausta ei toimitettu | viesti=%s", self.message.id)
             return
         try:
             await self.message.delete()

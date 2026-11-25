@@ -6,6 +6,7 @@ kanavakohtaisiin JSON-tiedostoihin (DM/ ja Channels/ kansioissa).
 Taustatehtävä skannaa tiedostot säännöllisesti ja poistaa
 vanhentuneet viestit Discordista.
 """
+from typing import Dict, Optional
 import json
 import os
 import time
@@ -93,7 +94,7 @@ def _save_data(path: Path, data: dict) -> None:
 # REKISTERÖINTI
 # ============================================================
 
-def register_message(message: discord.Message,lifetime_seconds: int | None = None,) -> None:
+def register_message(message: discord.Message,lifetime_seconds: Optional[int] = None,) -> None:
     """Rekisteröi botin lähettämä viesti poistolokiin.
 
     Parametrit:
@@ -123,7 +124,7 @@ def _has_delete_at(entry: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0
 
 
-def _fallback_schedule(message: discord.Message) -> dict[str, float]:
+def _fallback_schedule(message: discord.Message) -> Dict[str, float]:
     created_at = message.created_at.timestamp()
     return {
         "created_at": created_at,

@@ -1,4 +1,5 @@
 """Ollama replies to direct Discord mentions."""
+from typing import Optional
 import asyncio
 from base64 import b64encode
 import re
@@ -140,7 +141,7 @@ class OllamaHosts:
 async def _generate_on_host(
     session: aiohttp.ClientSession, discovery_timeout: aiohttp.ClientTimeout,
     hosts: OllamaHosts, host: str, prompt: str, system_prompt: str, image: str | None,
-    message_id: int | None, models_override: tuple[str, ...] | None,
+    message_id: Optional[int], models_override: tuple[str, ...] | None,
     history: list[dict[str, str]], visited: set[str],
 ) -> tuple[str | None, str | None, int]:
     models = models_override or config.OLLAMA_MODELS
@@ -181,6 +182,12 @@ async def _generate_on_host(
     for model in candidates:
         visited.add(model)
         kind = await hosts.model_kind(session, host, model, discovery_timeout)
+        if kind is None:
+            log.warning(
+                "Ollama %s / %s: mallin kyvyt tuntemattomat | viesti=%s | kuvapyyntö=%s",
+                host, model, message_id, image is not None,
+            )
+            trace("model_capabilities_unknown", message_id, host=host, model=model)
         if kind in {"remote", "missing"} or (image is not None and kind != "vision") or (image is None and kind == "vision"):
             log.info("Ollama %s / %s: ohitettu | mallityyppi=%s | kuvapyyntö=%s",
                      host, model, kind, image is not None)
@@ -237,7 +244,7 @@ async def _generate_on_host(
 
 async def _generate(
     prompt: str, system_prompt: str, hosts: OllamaHosts, image: str | None = None, *,
-    message_id: int | None = None, preferred: tuple[str, str] | None = None,
+    message_id: Optional[int] = None, preferred: tuple[str, str] | None = None,
     history: list[dict[str, str]] | None = None,
 ) -> tuple[str, tuple[str, str]] | None:
     timeout = aiohttp.ClientTimeout(
@@ -306,7 +313,7 @@ class OllamaReplies:
         self._memory = SessionMemory()
         self._system_prompt = "\n\n".join((_system_prompt(), PEOPLE_INSTRUCTIONS, STYLE_INSTRUCTIONS))
 
-    def session_style(self, channel_id: int | None) -> str:
+    def session_style(self, channel_id: Optional[int]) -> str:
         return self._memory.style(channel_id) if channel_id is not None else ""
 
     async def handle(self, message: discord.Message, bot_user_id: int):

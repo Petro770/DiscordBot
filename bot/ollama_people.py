@@ -62,12 +62,13 @@ async def _reply_message(message: discord.Message, recent: list[discord.Message]
 
 
 async def _recent_messages(message: discord.Message, bot_user_id: int) -> list[discord.Message]:
-    if not config.OLLAMA_RECENT_MESSAGES:
+    limit = config.OLLAMA_RECENT_MESSAGES
+    if limit == 0:
         return []
 
     async def collect():
         recent = []
-        async for prior in message.channel.history(limit=config.OLLAMA_RECENT_MESSAGES, before=message):
+        async for prior in message.channel.history(limit=12 if limit is None else limit, before=message):
             if (not prior.author.bot or prior.author.id == bot_user_id) and prior.content.strip():
                 recent.append(prior)
         return list(reversed(recent))
@@ -100,7 +101,7 @@ async def prepare_people(message: discord.Message, prompt: str, bot_user_id: int
     if reply is not None:
         if not reply.author.bot or reply.author.id == bot_user_id:
             add(reply.author, "vastatun viestin kirjoittaja")
-            if config.OLLAMA_RECENT_MESSAGES and reply.content.strip() and all(prior.id != reply.id for prior in recent):
+            if config.OLLAMA_RECENT_MESSAGES != 0 and reply.content.strip() and all(prior.id != reply.id for prior in recent):
                 recent.insert(0, reply)
     for user in message.mentions[:12]:
         add(user, "mainittu")

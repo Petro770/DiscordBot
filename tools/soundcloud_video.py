@@ -1,4 +1,5 @@
 """Muodosta SoundCloud-kappaleesta kansikuvallinen MP4."""
+from typing import Optional
 import asyncio
 from contextlib import suppress
 from base64 import b64encode
@@ -117,21 +118,25 @@ def _band_styles(settings):
 
 def _wave_palette(cover: Image.Image | None, count: int) -> tuple[tuple[int, int, int], ...]:
     """Choose a cover accent, keeping bass warm and treble gently cool."""
-    if cover is None:
-        base = (157, 176, 192)
-    else:
+    base = (157, 176, 192)
+    if cover is not None:
         thumb = cover.convert("RGB").resize((64, 64), Image.Resampling.LANCZOS)
         quantized = thumb.quantize(colors=12)
-        palette = quantized.getpalette()
+        palette = quantized.getpalette() or []
         candidates = []
-        for population, index in quantized.getcolors():
+        for population, index in quantized.getcolors() or []:
             rgb = tuple(palette[index * 3:index * 3 + 3])
+            if len(rgb) != 3:
+                continue
             hue, saturation, value = colorsys.rgb_to_hsv(*(c / 255 for c in rgb))
             # Prefer a representative chromatic accent over black/white margins.
             weight = population * (0.15 + saturation) * (0.15 + min(value, 1 - value))
             candidates.append((weight, hue, saturation))
-        _, hue, saturation = max(candidates)
-        base = tuple(round(c * 255) for c in colorsys.hsv_to_rgb(hue, min(0.48, saturation * 0.7), 0.86))
+        if candidates:
+            _, hue, saturation = max(candidates)
+            base = tuple(round(c * 255) for c in colorsys.hsv_to_rgb(hue, min(0.48, saturation * 0.7), 0.86))
+        else:
+            log.warning("SoundCloud-video: kansikuvan paletti puuttuu tai on vajaa, käytetään oletusvärejä")
     colors = []
     for index in range(count):
         position = index / max(1, count - 1)
@@ -324,7 +329,7 @@ def _wave_frames(envelopes: tuple[array, ...], settings=SoundCloudVideoSettings(
 
 def _draw_beat_sweep(
     floor: Image.Image, beat_times: tuple[float, ...], now: float, color: tuple[int, int, int],
-    settings=SoundCloudVideoSettings(), *, downbeat_phase: int | None = None,
+    settings=SoundCloudVideoSettings(), *, downbeat_phase: Optional[int] = None,
 ) -> None:
     half_travel = 0.85
     first = bisect_left(beat_times, now - half_travel)
@@ -377,12 +382,13 @@ def _report_preview(frame, seconds, cover, intro, title_image, intro_seconds):
         report("preview", image=payload)
 
 
-def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: int | None, settings=SoundCloudVideoSettings(), palette=None, beat_times=(), *, preview=None, downbeat_phase=None) -> None:
+def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: Optional[int], settings=SoundCloudVideoSettings(), palette=None, beat_times=(), *, preview=None, downbeat_phase=None) -> None:
     with tempfile.TemporaryFile() as errors, subprocess.Popen(
         command, stdin=subprocess.PIPE, stderr=errors, creationflags=_NO_CONSOLE,
     ) as ffmpeg:
         # Timeout measures lack of progress, not the total song render duration.
         stopped = Event()
+        timed_out = Event()
         last_activity = monotonic()
 
         def stop_timed_out_encode():
@@ -391,8 +397,15 @@ def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: 
                 return
             remaining = settings.encode_timeout - (monotonic() - last_activity)
             if remaining <= 0:
-                log.error("SoundCloud-video [%s]: FFmpeg ei edistynyt %d sekuntiin", message_id, settings.encode_timeout)
-                ffmpeg.kill()
+                timed_out.set()
+                log.error(
+                    "SoundCloud-video [%s]: watchdog pysäyttää FFmpegin | PID=%s | ruutuja=%s | ilman edistystä %.1f s",
+                    message_id, ffmpeg.pid, frames_written, monotonic() - last_activity,
+                )
+                try:
+                    ffmpeg.kill()
+                except OSError:
+                    log.exception("SoundCloud-video [%s]: FFmpegin pysäytys epäonnistui", message_id)
             else:
                 watchdog = Timer(remaining, stop_timed_out_encode)
                 watchdog.daemon = True
@@ -411,6 +424,8 @@ def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: 
         try:
             with ffmpeg.stdin as frames:
                 for frame in _wave_frames(envelopes, settings, palette, beat_times, downbeat_phase=downbeat_phase):
+                    if timed_out.is_set():
+                        break
                     frames.write(frame)
                     last_activity = monotonic()
                     frames_written += 1
@@ -434,12 +449,27 @@ def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: 
             log.info("SoundCloud-video [%s]: ruudut syötetty, odotetaan MP4:n viimeistelyä", message_id)
         except BrokenPipeError:
             log.warning("SoundCloud-video [%s]: FFmpeg sulki ruutuputken", message_id)
+        except BaseException:
+            if ffmpeg.poll() is None and not timed_out.is_set():
+                ffmpeg.kill()
+            raise
         finally:
-            try:
-                returncode = ffmpeg.wait()
-            finally:
-                stopped.set()
-                watchdog.cancel()
+            stopped.set()
+            watchdog.cancel()
+
+        try:
+            returncode = ffmpeg.wait(timeout=settings.encode_timeout)
+        except subprocess.TimeoutExpired:
+            log.error(
+                "SoundCloud-video [%s]: FFmpegin viimeistely aikakatkaistiin | PID=%s | raja=%s s",
+                message_id, ffmpeg.pid, settings.encode_timeout,
+            )
+            ffmpeg.kill()
+            ffmpeg.wait(timeout=5)
+            raise
+        if timed_out.is_set():
+            errors.seek(0)
+            raise subprocess.TimeoutExpired(command, settings.encode_timeout, stderr=errors.read())
         log.info(
             "SoundCloud-video [%s]: FFmpeg päättyi %.1f s jälkeen (koodi %d, %d ruutua)",
             message_id, monotonic() - started, returncode, frames_written,
@@ -465,7 +495,7 @@ def _fallback_cover() -> Image.Image:
 
 def _compress_for_upload(
     ffmpeg: str, source: Path, target: Path, duration: float, file_limit: int,
-    message_id: int | None, settings=SoundCloudVideoSettings(),
+    message_id: Optional[int], settings=SoundCloudVideoSettings(),
 ) -> bool:
     # Jätä tilaa MP4-säiliölle ja enkooderin bittivirtavaihtelulle.
     total_bitrate = int(file_limit * 8 * 0.90 / duration)
@@ -510,7 +540,7 @@ def _compress_for_upload(
 
 def _render_video(
     audio_path: str, artwork: Image.Image | None, title: str, artist: str, file_limit: int,
-    message_id: int | None, settings=SoundCloudVideoSettings(), *, preview_path: Path | None = None,
+    message_id: Optional[int], settings=SoundCloudVideoSettings(), *, preview_path: Path | None = None,
 ) -> str | None:
     cover = ImageOps.pad(
         artwork if artwork is not None else _fallback_cover(),
@@ -637,7 +667,7 @@ def _decode_artwork(data: bytes) -> Image.Image | None:
 
 async def make_soundcloud_video(
     audio_path: str, artwork_url: str, title: str, artist: str, file_limit: int,
-    *, avatar_url: str = "", message_id: int | None = None,
+    *, avatar_url: str = "", message_id: Optional[int] = None,
     settings: SoundCloudVideoSettings | None = None,
     preview_path: Path | None = None,
 ) -> str | None:

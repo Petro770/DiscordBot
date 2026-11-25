@@ -15,7 +15,7 @@ from config import (
     REACTION_EMOJI,
     REPLY_DELETE_AFTER,
 )
-from printer.engine import print_image
+from printer.engine import InvalidPrintImage, print_image
 from core.logging import log
 
 
@@ -52,6 +52,7 @@ class PrintQueue:
                 ok_count = 0
                 err_count = 0
 
+                invalid_images = 0
                 for filepath in filepaths:
                     while self.is_rate_limited():
                         log.info("⏳ Tulostusraja täynnä, odotetaan %.1f s...", self.delay)
@@ -63,6 +64,9 @@ class PrintQueue:
                         await asyncio.to_thread(print_image, filepath, PRINTER_NAME)
                         self.mark_print()
                         ok_count += 1
+                    except InvalidPrintImage:
+                        invalid_images += 1
+                        err_count += 1
                     except Exception as e:
                         log.error("❌ Virhe: %s", e)
                         err_count += 1
@@ -89,7 +93,9 @@ class PrintQueue:
                         log.warning("Kuittausviestin lähetys epäonnistui: %s", exc)
                 else:
                     try:
-                        await message.reply("⚠️ Tulostus epäonnistui.",
+                        await message.reply(
+                            "⚠️ Tiedosto ei ole kelvollinen tai tuettu kuva."
+                            if invalid_images == err_count and invalid_images else "⚠️ Tulostus epäonnistui.",
                                            delete_after=REPLY_DELETE_AFTER)
                     except Exception:
                         pass

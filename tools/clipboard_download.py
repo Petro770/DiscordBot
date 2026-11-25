@@ -110,9 +110,12 @@ async def download_media(url: str, destination: Path, soundcloud_video: bool = T
                     log.warning("SoundCloud: esikatselua ei saatu julkaistua", exc_info=True)
             return output
     finally:
-        original.unlink(missing_ok=True)
-        if rendered is not None:
-            rendered.unlink(missing_ok=True)
+        for temporary in (original, rendered):
+            if temporary is not None:
+                try:
+                    temporary.unlink(missing_ok=True)
+                except OSError:
+                    log.warning("Leikepöytälatauksen väliaikaistiedoston poisto epäonnistui", exc_info=True)
 
 
 if __name__ == "__main__":

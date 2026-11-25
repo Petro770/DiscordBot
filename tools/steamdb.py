@@ -86,8 +86,15 @@ async def capture_steamdb_chart():
             "--disable-infobars",
         ]
 
-        if not Path(p.chromium.executable_path).is_file():
+        executable = Path(p.chromium.executable_path)
+        if not executable.is_file():
             await asyncio.to_thread(install_playwright_browsers)
+            if not executable.is_file():
+                log.error("SteamDB: Chromiumin suoritustiedosto puuttuu asennuksen jälkeen: %s", executable)
+                raise RuntimeError(
+                    "Chromium puuttuu asennuksen jälkeen. Tarkista selaimen asennuskansion kirjoitusoikeus "
+                    "ja suorita python -m playwright install chromium."
+                )
         try:
             browser = await p.chromium.launch(headless=False, args=launch_args)
         except Exception as exc:

@@ -1,4 +1,5 @@
 """Opt-in local JSONL trace for diagnosing Discord replies."""
+from typing import Optional
 import json
 import logging
 from datetime import datetime, timezone
@@ -32,7 +33,7 @@ def setup_trace():
     log.info("Ollama: jäljitysloki käytössä | tiedosto=%s", path)
 
 
-def trace(event: str, message_id: int | None, **fields):
+def trace(event: str, message_id: Optional[int], **fields):
     if not (_trace.handlers or monitor_log.handlers):
         return
     entry = {

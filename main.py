@@ -3,6 +3,9 @@ import asyncio
 import signal
 import sys
 
+if sys.version_info < (3, 10):
+    raise SystemExit("DiscordBot vaatii Python 3.10:n tai uudemman.")
+
 import discord
 
 import config

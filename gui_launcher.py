@@ -1,6 +1,9 @@
 import asyncio
 import os
 import sys
+
+if sys.version_info < (3, 10):
+    raise SystemExit("DiscordBot vaatii Python 3.10:n tai uudemman.")
 import threading
 import time
 import traceback
@@ -161,7 +164,7 @@ class BotManagerApp(QMainWindow):
         self._rendered_video = None
         self.download_process.readyReadStandardOutput.connect(self._read_download_progress)
         self.download_process.started.connect(lambda: self.notification_sounds.play("started"))
-        self.download_process.finished.connect(self._download_finished)
+        self.download_process.finished.connect(self._download_finished, Qt.UniqueConnection)
         self.download_process.errorOccurred.connect(self._download_error)
         self._download_dir = None
         self._last_url = None
