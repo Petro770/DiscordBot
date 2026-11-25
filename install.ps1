@@ -23,6 +23,11 @@ if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
     }
 }
 
+$pythonw = Join-Path $venv 'Scripts\pythonw.exe'
+if (-not (Test-Path -LiteralPath $pythonw -PathType Leaf)) {
+    throw 'pythonw.exe is missing. Repair Windows Python and recreate .venv before using GUI updates.'
+}
+
 & $python -m pip install --disable-pip-version-check -r $requirements
 if ($LASTEXITCODE -ne 0) {
     throw 'Dependency installation failed. See the pip output above.'

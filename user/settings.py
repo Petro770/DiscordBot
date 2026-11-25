@@ -7,6 +7,7 @@ import asyncio
 import discord
 
 from core.logging import log
+from user.tracker import _load_data
 
 # ============================================================
 # TIEDOSTOT
@@ -44,22 +45,26 @@ DEFAULTS: dict[str, any] = {
 
 def load_user_data() -> dict[str, dict]:
     """Lataa käyttäjädata JSON-tiedostosta."""
-    if not USER_DATA_FILE.exists():
-        return {}
-    try:
-        with open(USER_DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        log.warning("user_data.json luku epäonnistui: %s", e)
-        return {}
+    data = _load_data(USER_DATA_FILE)
+    valid = {
+        key: entry for key, entry in data.items()
+        if isinstance(entry, dict) and isinstance(entry.get("settings", {}), dict)
+        and isinstance(entry.get("version", ""), str)
+    }
+    if len(valid) != len(data):
+        log.warning("user_data.json: virheelliset käyttäjätietueet ohitettiin")
+    return valid
 
 
 def save_user_data(data: dict[str, dict]) -> None:
     """Tallenna käyttäjädata JSON-tiedostoon."""
     try:
-        with open(USER_DATA_FILE, "w", encoding="utf-8") as f:
+        _load_data(USER_DATA_FILE, strict=True)
+        temporary_path = USER_DATA_FILE.with_suffix(".json.tmp")
+        with temporary_path.open("w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
-    except OSError as e:
+        temporary_path.replace(USER_DATA_FILE)
+    except (ValueError, OSError) as e:
         log.error("user_data.json kirjoitus epäonnistui: %s", e)
 
 

@@ -283,6 +283,11 @@ async def _generate(
             "Ollama: yhtään kuvia tukevaa mallia ei saatu vahvistettua | viesti=%s | palvelimia=%s",
             message_id, len(hosts.hosts),
         )
+    elif not attempts:
+        log.warning(
+            "Ollama: yksikään määritetty palvelin ei tarjonnut käyttökelpoista paikallista tekstimallia | viesti=%s | palvelimia=%s",
+            message_id, len(hosts.hosts),
+        )
     else:
         log.warning(
             "Ollama: mallikierros päättyi ilman vastausta | viesti=%s | kuvapyyntö=%s | chat-yrityksiä=%s",
@@ -450,7 +455,7 @@ class OllamaReplies:
             log.warning("Ollama: viesti %s jäi ilman mallin vastausta", message.id)
             if image is not None:
                 return "Ollama ei saanut tulkittua kuvaa. Tarkista lokista, löytyikö kuvaa tukeva malli.", None, None, None
-            return "Ollama ei saanut tällä kertaa muodostettua vastausta.", None, None, None
+            return "Ollama ei saanut muodostettua vastausta. Palvelin voi olla poissa käytöstä tai sopiva paikallinen malli voi puuttua.", None, None, None
         rendered = render_people(answer, mentions)
         trace("parsed_response", message.id, content=rendered, style=style,
               text_target=target if image is None else None)

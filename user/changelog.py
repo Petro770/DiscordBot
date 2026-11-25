@@ -1,7 +1,5 @@
 """Changelog-seuranta ja DM-kysely."""
 import json
-import os
-import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -52,11 +50,14 @@ class ChangelogEntry:
 
 def load_changelog() -> list[ChangelogEntry]:
     """Lataa changelog JSON:ista. Palauttaa listan uusin → vanhin."""
-    if not CHANGELOG_FILE.exists():
-        log.warning("changelog.json puuttuu!")
+    try:
+        with CHANGELOG_FILE.open(encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict) or not isinstance(data.get("versions", []), list):
+            raise ValueError("Virheellinen versiolista")
+    except (OSError, ValueError) as exc:
+        log.warning("Changelogin lukeminen epäonnistui: %s", exc)
         return []
-    with open(CHANGELOG_FILE, "r", encoding="utf-8") as f:
-        data = json.load(f)
     entries = [
         ChangelogEntry(
             version=v["version"],
@@ -64,6 +65,7 @@ def load_changelog() -> list[ChangelogEntry]:
             changes=v.get("changes", []),
         )
         for v in data.get("versions", [])
+        if isinstance(v, dict) and isinstance(v.get("version"), str) and isinstance(v.get("changes", []), list)
     ]
     return entries
 
@@ -105,6 +107,8 @@ def format_changelog_since(user_version: str,current_version: str,entries: list[
     for entry in relevant:
         lines.append(f"**v{entry.version}**" + (f"  *{entry.date}*" if entry.date else ""))
         for change in entry.changes:
+            if not isinstance(change, dict):
+                continue
             ctype = change.get("type", "meta")
             text = change.get("text", "")
             if ctype == "meta":
@@ -127,40 +131,63 @@ def format_changelog_since(user_version: str,current_version: str,entries: list[
 def get_bot_version() -> str:
     return config.BOT_VERSION
 
-async def check_and_notify_user(bot: discord.Client,user_id: int,username: str,):
-    """Tarkista käyttäjän versio ja lähetä changelog-DM jos tarpeen."""
-    current_version = get_bot_version()
-    entries = load_changelog()
+_notifications_in_flight: set[int] = set()
 
-    if not entries:
+
+async def check_and_notify_user(bot: discord.Client, user_id: int, username: str,
+                                source: discord.Message | None = None):
+    """Send an update notice once per user and version."""
+    if user_id in _notifications_in_flight:
         return
+    _notifications_in_flight.add(user_id)
+    try:
+        current_version = get_bot_version()
+        entries = load_changelog()
+        if not entries:
+            return
+        key = str(user_id)
+        initial = load_user_data().get(key, {})
+        stored_version = initial.get("version", "0.0.0")
+        acknowledged_version = stored_version
+        if version_is_newer(current_version, stored_version):
+            text = format_changelog_since(stored_version, current_version, entries)
+            if not text or await _deliver_update(bot, user_id, username, text, source):
+                acknowledged_version = current_version
 
-    users = load_user_data()
-    stored = users.get(str(user_id), {})
-    stored_version = stored.get("version", "0.0.0")
+        users = load_user_data()
+        if initial and key not in users:
+            return  # Käyttäjä ehti poistaa tietonsa ilmoituksen aikana.
+        entry = users.setdefault(key, {})
+        if version_is_newer(acknowledged_version, entry.get("version", "0.0.0")):
+            entry["version"] = acknowledged_version
+        entry["last_seen"] = datetime.now(timezone.utc).isoformat()
+        save_user_data(users)
+    finally:
+        _notifications_in_flight.discard(user_id)
 
-    now_iso = datetime.now(timezone.utc).isoformat()
-    users[str(user_id)] = {
-        "version": current_version,
-        "last_seen": now_iso,
-        "settings": stored.get("settings", {}),  # säilytä asetukset
-    }
-    save_user_data(users)
 
-    if not version_is_newer(current_version, stored_version):
-        return
-
-    message_text = format_changelog_since(stored_version, current_version, entries)
-    if not message_text:
-        return
-
+async def _deliver_update(bot, user_id, username, text, source):
+    mentions = discord.AllowedMentions.none()
     try:
         member = await bot.fetch_user(user_id)
         dm_channel = await member.create_dm()
-        await dm_channel.send(message_text)
-        log.info("📬 Changelog-DM lähetetty: %s (v%s → v%s)", username, stored_version, current_version)
-    except discord.Forbidden:
-        log.info("📬 Changelog-DM estetty: %s", username)
-    except discord.HTTPException as e:
-        log.warning("📬 Changelog-DM epäonnistui: %s – %s", username, e)
+        await dm_channel.send(text, allowed_mentions=mentions)
+    except discord.HTTPException as exc:
+        log.warning("Changelog-DM epäonnistui käyttäjälle %s (HTTP %s)", username, exc.status)
+    else:
+        log.info("Changelog-DM lähetetty käyttäjälle %s", username)
+        return True
 
+    if source is None or source.guild is None:
+        return False
+    try:
+        await source.reply(
+            f"Botista on saatavilla päivitystiedot (v{get_bot_version()}). "
+            "Yksityisviestiä ei voitu toimittaa.",
+            mention_author=False, allowed_mentions=mentions, silent=True,
+        )
+    except discord.HTTPException as exc:
+        log.warning("Changelog-kanavailmoitus epäonnistui (HTTP %s)", exc.status)
+        return False
+    log.info("Changelog-ilmoitus lähetetty kanavalle %s", source.channel.id)
+    return True

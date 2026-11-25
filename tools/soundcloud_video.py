@@ -1,5 +1,6 @@
 """Muodosta SoundCloud-kappaleesta kansikuvallinen MP4."""
 import asyncio
+from contextlib import suppress
 from base64 import b64encode
 from bisect import bisect_left, bisect_right
 import colorsys
@@ -605,9 +606,10 @@ def _render_video(
         log.info("SoundCloud-video [%s]: MP4 valmis (%d tavua, raja %d)", message_id, video_size, file_limit)
         result = finalize(str(video_path), "soundcloud")
         if preview_path is not None:
+            temporary_preview = preview_path.with_suffix(".zip.tmp")
             try:
                 preview_path.parent.mkdir(parents=True, exist_ok=True)
-                with ZipFile(preview_path, "w", ZIP_DEFLATED, compresslevel=1) as archive:
+                with ZipFile(temporary_preview, "w", ZIP_DEFLATED, compresslevel=1) as archive:
                     archive.write(cover_path, "cover.png")
                     archive.write(intro_path, "intro.png")
                     archive.write(title_path, "title.png")
@@ -616,8 +618,12 @@ def _render_video(
                     archive.writestr("downbeat.json", json.dumps(downbeat_phase))
                     for index, envelope in enumerate(envelopes):
                         archive.writestr(f"band-{index}.bin", envelope.tobytes())
+                temporary_preview.replace(preview_path)
             except OSError:
                 log.warning("SoundCloud-video [%s]: esikatseludataa ei voitu tallentaa", message_id, exc_info=True)
+            finally:
+                with suppress(OSError):
+                    temporary_preview.unlink(missing_ok=True)
         report("soundcloud_video", ffmpeg=str(ffmpeg), duration=duration, fps=settings.fps)
         return result
 

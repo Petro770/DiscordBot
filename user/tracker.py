@@ -58,18 +58,18 @@ def _get_file_path(channel: discord.abc.Messageable) -> Path:
 
 def _load_data(path: Path, *, strict: bool = False) -> dict:
     """Lataa JSON-tiedosto. Palauttaa tyhjän dict jos ei ole olemassa."""
-    if not path.exists():
-        return {}
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
             if not isinstance(data, dict):
                 raise ValueError("JSONin juuren pitää olla objekti")
             return data
+    except FileNotFoundError:
+        return {}
     except (ValueError, OSError) as e:
         if strict:
             raise
-        log.warning("message_tracker: luku epäonnistui (%s): %s", path.name, e)
+        log.warning("JSON-tiedoston luku epäonnistui (%s): %s", path.name, e)
         return {}
 
 

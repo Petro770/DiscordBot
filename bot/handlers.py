@@ -116,7 +116,7 @@ async def _changelog_notify(message: discord.Message):
     try:
         from user.changelog import check_and_notify_user
         asyncio.create_task(
-            check_and_notify_user(_bot, message.author.id, message.author.name)
+            check_and_notify_user(_bot, message.author.id, message.author.name, source=message)
         )
     except Exception:
         pass

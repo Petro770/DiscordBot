@@ -57,6 +57,8 @@ def _label(event):
     if event["event"] == "models_exhausted":
         if event["has_image"] and not event["attempts"]:
             return "Kuvamallia ei löytynyt"
+        if not event["attempts"]:
+            return "Käyttökelpoista tekstimallia ei löytynyt"
         return "Mallikierros päättyi ilman vastausta"
     if event["event"] == "finished":
         return _OUTCOMES[event["outcome"]]

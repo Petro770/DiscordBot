@@ -2,6 +2,13 @@ import asyncio
 import subprocess
 import sys
 import io
+import logging
+from pathlib import Path
+
+if __package__:
+    from core.logging import log
+else:
+    log = logging.getLogger("steamdb")
 from playwright.async_api import async_playwright
 
 # --- Stealth-import: yritetään eri variantteja ---
@@ -27,16 +34,16 @@ except ImportError:
 
 
 def install_playwright_browsers():
-    print("Selainohjaimia ei löytynyt. Asennetaan Chromium...")
+    log.warning("SteamDB: Playwrightin Chromium puuttuu, yritetään asentaa se")
+    print("Playwrightin Chromium puuttuu. Asennetaan Chromium...", flush=True)
     try:
         subprocess.run(
             [sys.executable, "-m", "playwright", "install", "chromium"],
-            check=True
+            check=True, timeout=300,
         )
-        print("Chromium asennettu onnistuneesti!\n")
-    except subprocess.CalledProcessError as e:
-        print(f"Virhe selaimen asennuksessa: {e}")
-        sys.exit(1)
+    except (OSError, subprocess.SubprocessError) as exc:
+        log.error("SteamDB: Chromiumin asennus epäonnistui: %s", exc)
+        raise RuntimeError("Chromiumin asennus epäonnistui. Suorita python -m playwright install chromium.") from exc
 
 
 async def apply_stealth(page):
@@ -79,20 +86,13 @@ async def capture_steamdb_chart():
             "--disable-infobars",
         ]
 
+        if not Path(p.chromium.executable_path).is_file():
+            await asyncio.to_thread(install_playwright_browsers)
         try:
-            browser = await p.chromium.launch(
-                headless=False,
-                args=launch_args,
-            )
-        except Exception as e:
-            if "Executable doesn't exist" in str(e) or "not installed" in str(e).lower():
-                install_playwright_browsers()
-                browser = await p.chromium.launch(
-                    headless=False,
-                    args=["--disable-blink-features=AutomationControlled"],
-                )
-            else:
-                raise
+            browser = await p.chromium.launch(headless=False, args=launch_args)
+        except Exception as exc:
+            log.error("SteamDB: Chromiumin käynnistys epäonnistui: %s", exc)
+            raise RuntimeError("SteamDB:n Chromiumia ei voitu käynnistää. Tarkista Playwright-asennus.") from exc
 
         context = await browser.new_context(
             viewport={"width": 1366, "height": 768},
@@ -139,5 +139,6 @@ async def capture_steamdb_chart():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     asyncio.run(capture_steamdb_chart())
 

@@ -10,8 +10,8 @@ from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
     QCheckBox, QPushButton, QSystemTrayIcon, QTextEdit, QMenu, QMessageBox
 )
-from PyQt5.QtGui import QIcon
-from PyQt5.QtCore import QMimeData, QObject, QProcess, QProcessEnvironment, QSettings, QThread, QTimer, QUrl, pyqtSignal, pyqtSlot
+from PyQt5.QtGui import QIcon, QTextCursor
+from PyQt5.QtCore import QMimeData, QObject, QProcess, QProcessEnvironment, QSettings, QThread, Qt, QTimer, QUrl, pyqtSignal, pyqtSlot
 
 from tools.clipboard_download import MAX_FILE_BYTES, clipboard_url
 from tools.notification_sounds import NotificationSounds
@@ -34,12 +34,10 @@ class BotWorker(QObject):
     """Botin päälogiikka erillisessä säikeessä.
 
     Signaalit:
-        log_signal  -> GUI:n QTextEdit (yhdistetty _append_logiin)
         status_signal -> GUI:n status_label (yhdistetty status_updateen)
         error_signal  -> GUI:n status_label + QTextEdit (yhdistetty handle_erroriin)
     """
 
-    log_signal = pyqtSignal(str)
     status_signal = pyqtSignal(str)
     error_signal = pyqtSignal(str)
 
@@ -51,31 +49,11 @@ class BotWorker(QObject):
         self._loop = None
 
     def _emit(self, msg: str):
-        """Yhteinen emit. Kirjoittaa tiedostolokiin ja lähettää GUI:lle."""
         log.info(msg)
-        try:
-            self.log_signal.emit(msg)
-        except RuntimeError:
-            pass
-
-    def _emit_signal_only(self, msg: str):
-        """Lähettää vain PyQt-signaalin. EI kutsu log.info()a.
-
-        Käytetään PyQtLogHandlerin callbackina rekursion välttämiseksi.
-        """
-        try:
-            self.log_signal.emit(msg)
-        except RuntimeError:
-            pass
 
     def _emit_error(self, msg: str):
-        """Viriheviestin lähetys."""
         log.error(msg)
-        try:
-            self.log_signal.emit(f"VIRHE: {msg}")
-            self.error_signal.emit(msg)
-        except RuntimeError:
-            pass
+        self.error_signal.emit(msg)
 
     def _set_status(self, msg: str):
         """Päivitä vain status_label (ei lisää logiin uudestaan)."""
@@ -86,9 +64,6 @@ class BotWorker(QObject):
 
     @pyqtSlot()
     def run_bot(self):
-        handler = PyQtLogHandler(self._emit_signal_only)
-        log.addHandler(handler)
-
         try:
             thread_name = threading.current_thread().name
             self._emit(f"run_bot käynnistyi säikeessä '{thread_name}'")
@@ -124,7 +99,6 @@ class BotWorker(QObject):
             log.debug(tb)
             self._set_status("VIRHE: odottamaton virhe")
         finally:
-            log.removeHandler(handler)
             if self._loop and not self._loop.is_closed():
                 try:
                     self._loop.run_until_complete(self.client.close())
@@ -145,6 +119,7 @@ class BotWorker(QObject):
                 self._emit_error(f"Sulkeminen epäonnistui: {e}")
 
 class BotManagerApp(QMainWindow):
+    runtime_log = pyqtSignal(str)
 
     def __init__(self):
         super().__init__()
@@ -163,6 +138,10 @@ class BotManagerApp(QMainWindow):
         self._version_timer.timeout.connect(self._version_check.kill)
         self._ai_monitor = AiMonitor(self)
         self.setup_ui()
+        self.runtime_log.connect(self.log_update, Qt.QueuedConnection)
+        handler = PyQtLogHandler(self.runtime_log.emit)
+        log.addHandler(handler)
+        self.destroyed.connect(lambda: log.removeHandler(handler))
         self.notification_sounds = NotificationSounds(self.settings, self)
 
         self._is_running = False
@@ -286,13 +265,18 @@ class BotManagerApp(QMainWindow):
     def _version_check_error(self, error):
         if error == QProcess.FailedToStart:
             self._restore_update_button()
-            QMessageBox.warning(self, "Git-päivitys", "Git-komentoa ei saatu käynnistettyä.")
+            QMessageBox.warning(self, "Git-päivitys", "Git-komentoa ei saatu käynnistettyä. Asenna Git ja varmista, että git löytyy PATHista.")
 
     def _version_check_finished(self, exit_code, exit_status):
         self._restore_update_button()
         if exit_code != 0 or exit_status != QProcess.NormalExit:
             details = bytes(self._version_check.readAllStandardError()).decode("utf-8", errors="replace").strip()
-            QMessageBox.warning(self, "Git-päivitys", details or "Versiotarkistus keskeytyi tai aikakatkaistiin.")
+            reason = details or "Versiotarkistus keskeytyi tai aikakatkaistiin."
+            QMessageBox.warning(
+                self, "Git-päivitys",
+                reason + "\n\nTarkista internet-yhteys ja origin-etävaraston osoite sekä käyttöoikeudet. "
+                "Voit tarkistaa virheen myös ajamalla git fetch origin projektikansiossa.",
+            )
             return
 
         try:
@@ -316,22 +300,26 @@ class BotManagerApp(QMainWindow):
 
     def _apply_update(self, branch, commit):
         self._git_update.check(branch, commit)
+        python = Path(sys.executable)
+        if os.name == "nt":
+            python = python.with_name("pythonw.exe")
+            if not python.is_file():
+                raise UpdateError("pythonw.exe puuttuu. Korjaa Python-asennus ja luo .venv uudelleen ennen päivitystä.")
         was_running = self._is_running
         self.stop_bot_service()
         if self.worker_thread and self.worker_thread.isRunning():
             raise UpdateError("Botin taustasäie ei pysähtynyt. Päivitys keskeytettiin.")
         try:
             self._git_update.apply(branch, commit)
-        except UpdateError:
+        except UpdateError as exc:
             if was_running:
                 self.start_bot_service()
-            raise
+            raise UpdateError(
+                f"{exc}\n\nTarkista projektikansiossa git status, korjaa ilmoitettu ongelma ja yritä uudelleen."
+            ) from exc
         arguments = [str(PROJECT_DIR / "gui_launcher.py"), "--show-after-update"]
         if not was_running:
             arguments.append("--bot-stopped")
-        python = Path(sys.executable)
-        if python.name.lower() == "python.exe" and python.with_name("pythonw.exe").is_file():
-            python = python.with_name("pythonw.exe")
         started, _ = QProcess.startDetached(str(python), arguments, str(PROJECT_DIR))
         if not started:
             raise UpdateError("Päivitys tehtiin, mutta hallintapaneelin uudelleenkäynnistys epäonnistui. Avaa se uudelleen.")
@@ -413,14 +401,16 @@ class BotManagerApp(QMainWindow):
                 return
         self._last_url = None
         message = next(
-            (line.removeprefix("LATAUSVIRHE=") for line in reversed(errors.splitlines())
-             if line.startswith("LATAUSVIRHE=")),
+            (detail for line in reversed(errors.splitlines())
+             if (cleaned := line.strip()).startswith("LATAUSVIRHE=")
+             and (detail := cleaned.removeprefix("LATAUSVIRHE=").strip())),
             "Medialataus epäonnistui.",
         )
         self._report_download_failure(message)
 
     def _report_download_failure(self, message):
         self.download_progress.finish(False)
+        message = f"{message} Kopioi uusi linkki leikepöytään."
         self.download_status.setText(message)
         self._append_log(message)
         self.notification_sounds.play("error")
@@ -434,18 +424,19 @@ class BotManagerApp(QMainWindow):
     def _append_log(self, message: str):
         """Ainoa paikka, missä QTextEditiin kirjoitetaan."""
         timestamp = time.strftime("%H:%M:%S")
-        self.log_view.append(f"[{timestamp}] {message}")
+        self.log_view.moveCursor(QTextCursor.End)
+        self.log_view.insertPlainText(f"[{timestamp}] {message}\n")
         sb = self.log_view.verticalScrollBar()
         sb.setValue(sb.maximum())
 
     @pyqtSlot(str)
     def status_update(self, msg: str):
-        """Päivitä VAIN status_label. Ei lisää logiin (se tulee log_signalista)."""
+        """Päivitä VAIN status_label. Ei lisää logiin."""
         self.status_label.setText(f"Tila: {msg}")
 
     @pyqtSlot(str)
     def handle_error(self, msg: str):
-        """Päivitä status_label virhetilaan. Logiin kirjoittaa log_signal."""
+        """Päivitä status_label virhetilaan. Virhe on jo kirjattu lokiin."""
         self.status_label.setText("Tila: VIRHE")
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
@@ -468,7 +459,6 @@ class BotManagerApp(QMainWindow):
         self.worker_thread = QThread(self)
         self.worker.moveToThread(self.worker_thread)
 
-        self.worker.log_signal.connect(self.log_update)
         self.worker.status_signal.connect(self.status_update)
         self.worker.error_signal.connect(self.handle_error)
         self.worker_thread.started.connect(self.worker.run_bot)
