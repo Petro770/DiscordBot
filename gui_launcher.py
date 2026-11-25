@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import uuid4
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
-    QCheckBox, QPushButton, QSystemTrayIcon, QTextEdit, QMenu, QInputDialog, QMessageBox
+    QCheckBox, QPushButton, QSystemTrayIcon, QTextEdit, QMenu, QMessageBox
 )
 from PyQt5.QtGui import QIcon
 from PyQt5.QtCore import QMimeData, QObject, QProcess, QProcessEnvironment, QSettings, QThread, QTimer, QUrl, pyqtSignal, pyqtSlot
@@ -18,6 +18,7 @@ from tools.notification_sounds import NotificationSounds
 from tools.download_progress import ProgressReader
 from tools.download_progress_widget import DownloadProgressWidget
 from tools.git_update import GitUpdate, UpdateError
+from tools.git_update_dialog import GitUpdateDialog
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
@@ -288,26 +289,13 @@ class BotManagerApp(QMainWindow):
             branches = self._git_update.branches()
             if not branches:
                 raise UpdateError("Origin-etävarastosta ei löytynyt haaroja.")
-            labels = [f"{name} ({commit[:8]})" for name, commit in branches.items()]
-            names = list(branches)
-            default_branch = current if current in branches else "main"
-            default = names.index(default_branch) if default_branch in branches else 0
-            label, accepted = QInputDialog.getItem(
-                self, "Git-päivitys",
-                f"Nykyinen versio: {current or 'irrotettu HEAD'} ({short_commit}). Valitse haara:",
-                labels, default, False,
-            )
-            if not accepted:
+            dialog = GitUpdateDialog(current, short_commit, branches, self)
+            if not dialog.exec_():
                 return
-            branch = names[labels.index(label)]
-            commit = branches[branch]
+            selected = dialog.selected_branch()
+            branch, commit = selected.name, selected.commit
             if not self._git_update.check(branch, commit):
                 QMessageBox.information(self, "Git-päivitys", "Valittu haara on ajan tasalla.")
-                return
-            if QMessageBox.question(
-                self, "Git-päivitys", f"Päivitetäänkö haaraan {branch} ja käynnistetäänkö sovellus uudelleen?",
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
-            ) != QMessageBox.Yes:
                 return
             if self.download_process.state() != QProcess.NotRunning:
                 raise UpdateError("Medialataus on kesken. Odota sen valmistumista ennen päivitystä.")

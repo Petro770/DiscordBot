@@ -1,11 +1,21 @@
 """Safe Git operations for the desktop updater."""
 import os
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 
 class UpdateError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class RemoteBranch:
+    name: str
+    commit: str
+    date: str
+    author: str
+    subject: str
 
 
 class GitUpdate:
@@ -31,19 +41,23 @@ class GitUpdate:
             raise UpdateError("Hallintapaneeli pitää käynnistää projektin Git-kansiosta.")
         return self.git("branch", "--show-current"), self.git("rev-parse", "--short", "HEAD")
 
-    def branches(self) -> dict[str, str]:
+    def branches(self) -> list[RemoteBranch]:
         prefix = "refs/remotes/origin/"
-        refs = self.git("for-each-ref", "--format=%(refname) %(objectname) %(symref)", prefix)
-        branches = {}
-        for line in refs.splitlines():
-            ref, commit, *symbolic = line.split()
+        fields = "%(refname)%00%(objectname)%00%(symref)%00%(committerdate:short)%00%(authorname)%00%(subject)"
+        refs = self.git("for-each-ref", "--sort=-committerdate", f"--format={fields}", prefix)
+        branches = []
+        for line in refs.split("\n") if refs else ():
+            ref, commit, symbolic, date, author, subject = line.split("\0")
             if not symbolic:
-                branches[ref.removeprefix(prefix)] = commit
+                branches.append(RemoteBranch(ref.removeprefix(prefix), commit, date, author, subject))
         return branches
 
     def check(self, branch: str, commit: str) -> bool:
         current, _ = self.current()
-        if self.branches().get(branch) != commit:
+        remote_commit = self.git(
+            "rev-parse", "--verify", "--quiet", f"refs/remotes/origin/{branch}", allowed=(0, 1),
+        )
+        if remote_commit != commit:
             raise UpdateError("Etähaara muuttui tarkistuksen jälkeen. Tarkista versio uudelleen.")
         if self.git("status", "--porcelain", "--untracked-files=normal"):
             raise UpdateError("Projektissa on paikallisia muutoksia. Tallenna ne ennen päivitystä.")

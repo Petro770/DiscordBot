@@ -35,8 +35,9 @@ Tarvitset Python 3.10:n tai uudemman sekä Discord-sovelluksen, jolle on luotu b
 ## Päivittäminen hallintapaneelista
 
 Avaa hallintapaneeli ja paina **Tarkista versio…**. Paneeli hakee
-`origin`-etävaraston haarat ja näyttää nykyisen haaran sekä commitin.
-Valitse haara ja vahvista päivitys. Paneeli pysäyttää botin, päivittää
+`origin`-etävaraston haarat ja näyttää nykyisen haaran sekä commitin. Haarakorteissa
+näkyvät viimeisimmän commitin otsikko, tekijä, päivämäärä ja tunniste.
+Valitse yksi kortti ja paina **Päivitä ja käynnistä uudelleen**. Paneeli pysäyttää botin, päivittää
 Git-työkopion ja avaa itsensä uudelleen samalla Python-ympäristöllä.
 Botti käynnistyy uudelleen, jos se oli käynnissä ennen päivitystä.
 
