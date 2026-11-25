@@ -181,6 +181,7 @@ class AiMonitor(QDialog):
         self._context.setText(
             f"Tekstimalli: {' / '.join(target) if target else '–'}\n"
             f"Tyyliohje: {style or model_input.get('session_style') or '–'} · Muistivuorot: {model_input.get('history_turns', '–')}"
+            f" · Taustaviestit: {model_input.get('recent_messages', '–')} · Henkilöt: {model_input.get('people_count', '–')}"
             if events else "AI-pyyntöjä ei ole vielä vastaanotettu."
         )
         lines = []

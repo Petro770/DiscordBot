@@ -19,7 +19,7 @@ from core.logging import log
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
-_CONTEXT_KEYS = re.compile(r"""["'](viite|roolit|viesti|henkilöt|istunto|aiemmat_vuorot)["']\s*:""")
+_CONTEXT_KEYS = re.compile(r"""["'](viite|roolit|viesti|henkilöt|istunto|aiemmat_vuorot|kanavaviestit)["']\s*:""")
 
 
 def _echoes_internal_context(answer: str) -> bool:
@@ -27,7 +27,7 @@ def _echoes_internal_context(answer: str) -> bool:
     return (
         {"viite", "roolit"} <= keys
         or {"viesti", "henkilöt"} <= keys
-        or "aiemmat_vuorot" in keys
+        or bool({"aiemmat_vuorot", "kanavaviestit"} & keys)
     )
 
 
@@ -423,12 +423,13 @@ class OllamaReplies:
                 image_data = b64encode(raw).decode("ascii")
                 log.info("Ollama: kuva ladattu | viesti=%s | tavua=%s", message.id, len(raw))
 
-            payload, mentions = await prepare_people(message, prompt, bot_user_id)
+            payload, mentions, recent_count, people_count = await prepare_people(message, prompt, bot_user_id)
             context = self._memory.add_context(message.channel.id, payload)
             history = self._memory.chat_history(message.channel.id)
             preferred = self._memory.text_target(message.channel.id)
             trace("model_input", message.id, system=self._system_prompt, user=context,
                   has_image=image_data is not None, history=history, history_turns=len(history) // 2,
+                  recent_messages=recent_count, people_count=people_count,
                   session_style=self.session_style(message.channel.id), text_target=preferred)
             try:
                 result = await asyncio.wait_for(

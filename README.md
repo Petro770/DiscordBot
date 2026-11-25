@@ -111,6 +111,13 @@ esimerkiksi PowerShellissä komennolla
 Jos Ollama kuuntelee vain paikallisia yhteyksiä, määritä palvelimella
 `OLLAMA_HOST` kuuntelemaan lähiverkon osoitetta.
 
+Botti hakee oletuksena enintään 12 aiempaa viestiä samasta kanavasta,
+ketjusta tai yksityisviestikeskustelusta ja välittää tekstikatkelmat
+Ollamalle taustatietona. Bottiviestit ja botille osoitetut AI-kysymykset
+ohitetaan tässä haussa. Aseta `OLLAMA_RECENT_MESSAGES=0`, jos haluat
+käyttää vain botin omia AI-vuoroja. Asetuksen vaihteluväli on 0–30.
+Haku käyttää botin viestihistorian lukuoikeutta.
+
 ### AI-keskustelujen seuranta
 
 Hallintapaneelin **AI-keskustelut…**-ikkunassa näkyvät aktiiviset ja
@@ -186,7 +193,7 @@ kuvatulostuksesta ja liiteindeksoinnista.
 
 Ollama voi muotoilla keskusteluun sopivan lyhyen tyyliohjeen samalla,
 kun se vastaa. Botti säilyttää kanavaa tai yksityisviestikeskustelua kohti
-uusimman tyyliohjeen ja lyhyet katkelmat kolmesta viimeisestä onnistuneesta
+uusimman tyyliohjeen ja lyhyet katkelmat kahdeksasta viimeisestä onnistuneesta
 AI-vuorosta. Botti lähettää katkelmat Ollamalle erillisinä käyttäjän ja
 avustajan viesteinä, jotta malli voi jatkaa keskustelua. Muisti tyhjenee, kun botti
 käynnistetään uudelleen.
