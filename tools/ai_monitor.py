@@ -3,8 +3,8 @@ import json
 import logging
 from datetime import datetime
 
-from PyQt5.QtCore import QObject, QSignalBlocker, Qt, pyqtSignal, pyqtSlot
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import QObject, QSignalBlocker, Qt, Signal, Slot
+from PySide6.QtWidgets import (
     QApplication, QDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
     QPlainTextEdit, QPushButton, QSplitter, QTabWidget, QVBoxLayout, QWidget,
 )
@@ -42,7 +42,7 @@ _PRIVATE_FIELDS = TEXT_FIELDS | {"style", "session_style", "channel_name"}
 
 
 class _MonitorSignal(QObject):
-    received = pyqtSignal(object)
+    received = Signal(object)
 
 
 class _MonitorHandler(logging.Handler):
@@ -77,7 +77,7 @@ class AiMonitor(QDialog):
         self._timeline = QPlainTextEdit(readOnly=True)
         self._details = QPlainTextEdit(readOnly=True)
         self._context = QLabel()
-        self._context.setTextFormat(Qt.PlainText)
+        self._context.setTextFormat(Qt.TextFormat.PlainText)
         self._context.setWordWrap(True)
         self._copy = QPushButton("Kopioi vianetsintätiedot")
         self._copy.clicked.connect(self._copy_diagnostics)
@@ -105,13 +105,13 @@ class AiMonitor(QDialog):
         QHBoxLayout(self).addWidget(splitter)
 
         self._signal = _MonitorSignal(self)
-        self._signal.received.connect(self._receive, Qt.QueuedConnection)
+        self._signal.received.connect(self._receive, Qt.ConnectionType.QueuedConnection)
         handler = _MonitorHandler(self._signal)
         monitor_log.addHandler(handler)
         self.destroyed.connect(lambda: monitor_log.removeHandler(handler))
         self._refresh_details()
 
-    @pyqtSlot(object)
+    @Slot(object)
     def _receive(self, event):
         message_id = event["message_id"]
         if event["event"] == "discord_input":
@@ -134,7 +134,7 @@ class AiMonitor(QDialog):
     @staticmethod
     def _selected(widget):
         item = widget.currentItem()
-        return item.data(Qt.UserRole) if item else None
+        return item.data(Qt.ItemDataRole.UserRole) if item else None
 
     @staticmethod
     def _fill(widget, rows, selected):
@@ -142,7 +142,7 @@ class AiMonitor(QDialog):
             widget.clear()
             for key, text in rows:
                 item = QListWidgetItem(text)
-                item.setData(Qt.UserRole, key)
+                item.setData(Qt.ItemDataRole.UserRole, key)
                 widget.addItem(item)
                 if key == selected:
                     widget.setCurrentItem(item)

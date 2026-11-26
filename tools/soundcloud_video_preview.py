@@ -5,9 +5,9 @@ import math
 from pathlib import Path
 from zipfile import BadZipFile
 
-from PyQt5.QtCore import QProcess, Qt, QTimer
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import QComboBox, QLabel, QSlider, QVBoxLayout, QWidget
+from PySide6.QtCore import QProcess, Qt, QTimer
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import QComboBox, QLabel, QSlider, QVBoxLayout, QWidget
 
 from tools.soundcloud_preview_source import SoundCloudPreviewSource
 from tools.soundcloud_video import _decode_envelopes, _envelope_arguments
@@ -22,15 +22,15 @@ class SoundCloudVideoPreview(QWidget):
         layout.addWidget(self.source_menu)
         self.image = QLabel("Edellistä SoundCloud-videota ei ole saatavilla.")
         self.image.setWordWrap(True)
-        self.image.setAlignment(Qt.AlignCenter)
+        self.image.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.image.setFixedSize(260, 260)
-        layout.addWidget(self.image, alignment=Qt.AlignCenter)
-        self.slider = QSlider(Qt.Horizontal)
+        layout.addWidget(self.image, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setAccessibleName("Esikatselun aikaleima")
         self.slider.setEnabled(False)
         layout.addWidget(self.slider)
         self.timestamp = QLabel()
-        layout.addWidget(self.timestamp, alignment=Qt.AlignCenter)
+        layout.addWidget(self.timestamp, alignment=Qt.AlignmentFlag.AlignCenter)
         layout.addStretch()
 
         self.process = QProcess(self)
@@ -128,7 +128,7 @@ class SoundCloudVideoPreview(QWidget):
             pixmap.loadFromData(output.getvalue(), "PNG")
             self.image.setPixmap(pixmap)
             return
-        if self.process.state() != QProcess.NotRunning:
+        if self.process.state() != QProcess.ProcessState.NotRunning:
             return
         self.requested_ms = self.slider.value()
         self.process.start(self.ffmpeg, [
@@ -155,7 +155,7 @@ class SoundCloudVideoPreview(QWidget):
         if self.failed_key == key:
             self.image.setText("Aaltomuodon analyysi epäonnistui.")
             return None
-        if self.analysis.state() == QProcess.NotRunning:
+        if self.analysis.state() == QProcess.ProcessState.NotRunning:
             self.analysis_key = key
             self.image.setText("Analysoidaan videon ääntä…")
             self.analysis.start(self.ffmpeg, _envelope_arguments(self.path, settings))
@@ -168,7 +168,7 @@ class SoundCloudVideoPreview(QWidget):
         if key is None:
             return
         try:
-            if exit_code != 0 or exit_status != QProcess.NormalExit or not data:
+            if exit_code != 0 or exit_status != QProcess.ExitStatus.NormalExit or not data:
                 raise ValueError("Aaltomuodon analyysi epäonnistui.")
             self.analyzed = key, _decode_envelopes(data, key[0])
         except ValueError:
@@ -176,7 +176,7 @@ class SoundCloudVideoPreview(QWidget):
         self.timer.start()
 
     def _analysis_error(self, error):
-        if error == QProcess.FailedToStart:
+        if error == QProcess.ProcessError.FailedToStart:
             self.failed_key, self.analysis_key = self.analysis_key, None
             self.timer.start()
 
@@ -189,13 +189,13 @@ class SoundCloudVideoPreview(QWidget):
             self.timer.start()
             return
         image = QPixmap()
-        if exit_code == 0 and exit_status == QProcess.NormalExit and image.loadFromData(data, "JPEG"):
+        if exit_code == 0 and exit_status == QProcess.ExitStatus.NormalExit and image.loadFromData(data, "JPEG"):
             self.image.setPixmap(image)
         else:
             self.image.setText("Ruutua ei voitu lukea edellisestä videosta.")
 
     def _process_error(self, error):
-        if error == QProcess.FailedToStart:
+        if error == QProcess.ProcessError.FailedToStart:
             self.image.setText("Esikatselua ei voitu avata. Renderöi uusi SoundCloud-video.")
 
     def stop(self):
@@ -203,6 +203,6 @@ class SoundCloudVideoPreview(QWidget):
         self.requested_ms = None
         self.analysis_key = None
         for process in (self.process, self.analysis):
-            if process.state() != QProcess.NotRunning:
+            if process.state() != QProcess.ProcessState.NotRunning:
                 process.kill()
                 process.waitForFinished(500)

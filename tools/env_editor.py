@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from dotenv.parser import parse_stream
-from PyQt5.QtWidgets import QDialog, QDialogButtonBox, QLabel, QMessageBox, QPlainTextEdit, QVBoxLayout
+from PySide6.QtWidgets import QDialog, QDialogButtonBox, QLabel, QMessageBox, QPlainTextEdit, QVBoxLayout
 
 
 def _read_local(path):
@@ -53,9 +53,9 @@ class EnvEditor(QDialog):
         self.edit.setPlainText(self.original.decode("utf-8-sig") if self.original is not None
                                else template.read_text(encoding="utf-8-sig"))
         layout.addWidget(self.edit)
-        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
-        buttons.button(QDialogButtonBox.Save).setText("Tallenna")
-        buttons.button(QDialogButtonBox.Cancel).setText("Peruuta")
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText("Tallenna")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Peruuta")
         buttons.accepted.connect(self._save)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)

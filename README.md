@@ -44,7 +44,7 @@ Tarvitset Python 3.10:n tai uudemman sekä Discord-sovelluksen, jolle on luotu b
    TARGET_CHANNEL_ID=123456789012345678
    ```
 
-4. Käynnistä graafinen hallintaikkuna tai komentorivibotti.
+4. Käynnistä PySide6:n Qt Widgets -hallintaikkuna tai komentorivibotti.
 
    ```powershell
    .\launch.ps1
@@ -54,6 +54,16 @@ Tarvitset Python 3.10:n tai uudemman sekä Discord-sovelluksen, jolle on luotu b
    `.\launch.ps1 -CheckOnly` tarkistaa molempien käynnistystapojen Python-riippuvuudet ja moduulien latautumisen ilman Discord-yhteyttä. Skriptit käyttävät projektin omaa `.venv`-ympäristöä tavallisilla käyttäjäoikeuksilla.
 
    Jos PowerShell estää skriptin suorituskäytännön vuoksi, voit käynnistää sen erillisessä PowerShell-prosessissa komennolla `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`. Vaihda tiedoston nimeksi `.\launch.ps1` käynnistystä varten.
+
+Qt Widgets käyttää PySide6:ta. Kun vaihdat aiemmasta PyQt5-versiosta
+tähän haaraan, asenna ensin PySide6 nykyiseen virtuaaliympäristöön, jotta
+hallintapaneelin päivitystarkistus hyväksyy haaran. Python 3.10–3.13:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install "PySide6>=6.8.3,<6.9"
+```
+
+Python 3.14: käytä samassa komennossa pakettimääritystä `PySide6>=6.10.1,<6.12`.
 
 ## Asetusten tarkastelu
 

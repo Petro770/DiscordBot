@@ -1,7 +1,7 @@
 """Non-blocking clipboard notifications using bundled WAV files."""
 from pathlib import Path
-from PyQt5.QtCore import QObject, QUrl
-from PyQt5.QtMultimedia import QSoundEffect
+from PySide6.QtCore import QObject, QUrl
+from PySide6.QtMultimedia import QSoundEffect
 
 from core.logging import log
 
@@ -21,7 +21,7 @@ class NotificationSounds(QObject):
             effect.setSource(QUrl.fromLocalFile(str(directory / f"{name}.wav")))
 
     def _check_status(self, name):
-        if self.effects[name].status() == QSoundEffect.Error:
+        if self.effects[name].status() == QSoundEffect.Status.Error:
             log.warning("Leikepöydän äänimerkkiä ei voitu ladata: %s.wav", name)
 
     def play(self, name):

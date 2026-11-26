@@ -1,6 +1,6 @@
 """Branch picker for the desktop updater."""
-from PyQt5.QtCore import Qt
-from PyQt5.QtWidgets import (
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
     QButtonGroup, QDialog, QDialogButtonBox, QFrame, QLabel, QRadioButton,
     QScrollArea, QVBoxLayout, QWidget,
 )
@@ -29,7 +29,7 @@ class GitUpdateDialog(QDialog):
 
         for index, branch in enumerate(branches):
             card = QFrame(cards)
-            card.setFrameShape(QFrame.StyledPanel)
+            card.setFrameShape(QFrame.Shape.StyledPanel)
             card.setAutoFillBackground(True)
             content = QVBoxLayout(card)
             same_branch = branch.name == current
@@ -47,16 +47,16 @@ class GitUpdateDialog(QDialog):
             card_layout.addWidget(card)
 
         card_layout.addStretch()
-        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         default = next((i for i, b in enumerate(branches) if b.name == current), None)
         if default is None:
             default = next((i for i, b in enumerate(branches) if b.name == "main"), 0)
         self._choices.button(default).setChecked(True)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
-        update = buttons.button(QDialogButtonBox.Ok)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel, self)
+        update = buttons.button(QDialogButtonBox.StandardButton.Ok)
         update.setText("Päivitä ja käynnistä uudelleen")
-        cancel = buttons.button(QDialogButtonBox.Cancel)
+        cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
         cancel.setText("Peruuta")
         cancel.setDefault(True)
         buttons.accepted.connect(self.accept)
@@ -69,7 +69,7 @@ class GitUpdateDialog(QDialog):
     @staticmethod
     def _label(text: str) -> QLabel:
         label = QLabel()
-        label.setTextFormat(Qt.PlainText)
+        label.setTextFormat(Qt.TextFormat.PlainText)
         label.setText(text)
         label.setWordWrap(True)
         return label

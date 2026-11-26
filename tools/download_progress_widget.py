@@ -1,9 +1,9 @@
 """Live phase timings for one clipboard download."""
 from base64 import b64decode
 from time import monotonic
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QPlainTextEdit, QCheckBox
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel, QProgressBar, QPlainTextEdit, QCheckBox
 
 STAGES = {
     "starting": "Käynnistys", "resolve": "Linkin selvitys", "prepare": "Latauksen valmistelu",
@@ -32,7 +32,7 @@ class DownloadProgressWidget(QWidget):
             layout.addWidget(widget)
         self.preview_toggle = QCheckBox("Näytä renderöinnin esikatselu")
         self.preview = QLabel("Odotetaan renderöinnin ensimmäistä ruutua…")
-        self.preview.setAlignment(Qt.AlignCenter)
+        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview_toggle.toggled.connect(self.preview.setVisible)
         layout.addWidget(self.preview_toggle)
         layout.addWidget(self.preview)

@@ -9,12 +9,12 @@ import time
 import traceback
 from pathlib import Path
 from uuid import uuid4
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication, QMainWindow, QLabel, QVBoxLayout, QWidget,
     QCheckBox, QPushButton, QSystemTrayIcon, QTextEdit, QMenu, QMessageBox
 )
-from PyQt5.QtGui import QIcon, QTextCursor
-from PyQt5.QtCore import QMimeData, QObject, QProcess, QProcessEnvironment, QSettings, QThread, Qt, QTimer, QUrl, pyqtSignal, pyqtSlot
+from PySide6.QtGui import QIcon, QTextCursor
+from PySide6.QtCore import QMimeData, QObject, QProcess, QProcessEnvironment, QSettings, QThread, Qt, QTimer, QUrl, Signal, Slot
 
 from tools.clipboard_download import MAX_FILE_BYTES, clipboard_url
 from tools.notification_sounds import NotificationSounds
@@ -42,8 +42,8 @@ class BotWorker(QObject):
         error_signal  -> GUI:n status_label + QTextEdit (yhdistetty handle_erroriin)
     """
 
-    status_signal = pyqtSignal(str)
-    error_signal = pyqtSignal(str)
+    status_signal = Signal(str)
+    error_signal = Signal(str)
 
     def __init__(self, client, print_queue):
         super().__init__()
@@ -66,7 +66,7 @@ class BotWorker(QObject):
         except RuntimeError:
             pass
 
-    @pyqtSlot()
+    @Slot()
     def run_bot(self):
         try:
             thread_name = threading.current_thread().name
@@ -123,7 +123,7 @@ class BotWorker(QObject):
                 self._emit_error(f"Sulkeminen epäonnistui: {e}")
 
 class BotManagerApp(QMainWindow):
-    runtime_log = pyqtSignal(str)
+    runtime_log = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -142,7 +142,7 @@ class BotManagerApp(QMainWindow):
         self._version_timer.timeout.connect(self._version_check.kill)
         self._ai_monitor = AiMonitor(self)
         self.setup_ui()
-        self.runtime_log.connect(self.log_update, Qt.QueuedConnection)
+        self.runtime_log.connect(self.log_update, Qt.ConnectionType.QueuedConnection)
         handler = PyQtLogHandler(self.runtime_log.emit)
         log.addHandler(handler)
         self.destroyed.connect(lambda: log.removeHandler(handler))
@@ -165,7 +165,7 @@ class BotManagerApp(QMainWindow):
         self._rendered_video = None
         self.download_process.readyReadStandardOutput.connect(self._read_download_progress)
         self.download_process.started.connect(lambda: self.notification_sounds.play("started"))
-        self.download_process.finished.connect(self._download_finished, Qt.UniqueConnection)
+        self.download_process.finished.connect(self._download_finished, Qt.ConnectionType.UniqueConnection)
         self.download_process.errorOccurred.connect(self._download_error)
         self._download_dir = None
         self._last_url = None
@@ -192,7 +192,7 @@ class BotManagerApp(QMainWindow):
 
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
-        self.log_view.setLineWrapMode(QTextEdit.WidgetWidth)
+        self.log_view.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
         self.log_view.setStyleSheet(
             "font-family: Consolas, 'Courier New', monospace; font-size: 11px;"
         )
@@ -245,7 +245,7 @@ class BotManagerApp(QMainWindow):
         layout.addWidget(self.download_status)
 
     def _show_settings(self):
-        SettingsDialog(self._git_update, self.settings, self.clipboard_checkbox.isChecked(), self).exec_()
+        SettingsDialog(self._git_update, self.settings, self.clipboard_checkbox.isChecked(), self).exec()
 
     def _show_ai_monitor(self):
         self._ai_monitor.show()
@@ -271,13 +271,13 @@ class BotManagerApp(QMainWindow):
         self.update_button.setEnabled(True)
 
     def _version_check_error(self, error):
-        if error == QProcess.FailedToStart:
+        if error == QProcess.ProcessError.FailedToStart:
             self._restore_update_button()
             QMessageBox.warning(self, "Git-päivitys", "Git-komentoa ei saatu käynnistettyä. Asenna Git ja varmista, että git löytyy PATHista.")
 
     def _version_check_finished(self, exit_code, exit_status):
         self._restore_update_button()
-        if exit_code != 0 or exit_status != QProcess.NormalExit:
+        if exit_code != 0 or exit_status != QProcess.ExitStatus.NormalExit:
             details = bytes(self._version_check.readAllStandardError()).decode("utf-8", errors="replace").strip()
             reason = details or "Versiotarkistus keskeytyi tai aikakatkaistiin."
             QMessageBox.warning(
@@ -293,14 +293,14 @@ class BotManagerApp(QMainWindow):
             if not branches:
                 raise UpdateError("Origin-etävarastosta ei löytynyt haaroja.")
             dialog = GitUpdateDialog(current, short_commit, branches, self)
-            if not dialog.exec_():
+            if not dialog.exec():
                 return
             selected = dialog.selected_branch()
             branch, commit = selected.name, selected.commit
             if not self._git_update.check(branch, commit):
                 QMessageBox.information(self, "Git-päivitys", "Valittu haara on ajan tasalla.")
                 return
-            if self.download_process.state() != QProcess.NotRunning:
+            if self.download_process.state() != QProcess.ProcessState.NotRunning:
                 raise UpdateError("Medialataus on kesken. Odota sen valmistumista ennen päivitystä.")
             self._apply_update(branch, commit)
         except UpdateError as exc:
@@ -345,7 +345,7 @@ class BotManagerApp(QMainWindow):
 
     def _open_soundcloud_settings(self):
         from tools.soundcloud_settings_dialog import SoundCloudSettingsDialog
-        SoundCloudSettingsDialog(self.settings, self).exec_()
+        SoundCloudSettingsDialog(self.settings, self).exec()
 
     def _clipboard_toggled(self, enabled):
         self._last_url = None
@@ -361,7 +361,7 @@ class BotManagerApp(QMainWindow):
         if url is None:
             self._last_url = None
             return
-        if self.download_process.state() != QProcess.NotRunning:
+        if self.download_process.state() != QProcess.ProcessState.NotRunning:
             self.download_status.setText("Lataus on käynnissä. Kopioi uusi linkki sen jälkeen.")
             return
         self._last_url = url
@@ -396,7 +396,7 @@ class BotManagerApp(QMainWindow):
     def _download_finished(self, exit_code, exit_status):
         self._read_download_progress()
         errors = bytes(self.download_process.readAllStandardError()).decode("utf-8", errors="replace")
-        if exit_code == 0 and exit_status == QProcess.NormalExit:
+        if exit_code == 0 and exit_status == QProcess.ExitStatus.NormalExit:
             files = list(self._download_dir.glob("media.*"))
             if len(files) == 1 and files[0].is_file() and 0 < files[0].stat().st_size <= MAX_FILE_BYTES:
                 self.download_progress.finish(True)
@@ -435,31 +435,31 @@ class BotManagerApp(QMainWindow):
         self.tray_icon.showMessage("Lataus epäonnistui", message)
 
     def _download_error(self, error):
-        if error == QProcess.FailedToStart:
+        if error == QProcess.ProcessError.FailedToStart:
             self._last_url = None
             self._report_download_failure("Latausprosessia ei voitu käynnistää.")
 
     def _append_log(self, message: str):
         """Ainoa paikka, missä QTextEditiin kirjoitetaan."""
         timestamp = time.strftime("%H:%M:%S")
-        self.log_view.moveCursor(QTextCursor.End)
+        self.log_view.moveCursor(QTextCursor.MoveOperation.End)
         self.log_view.insertPlainText(f"[{timestamp}] {message}\n")
         sb = self.log_view.verticalScrollBar()
         sb.setValue(sb.maximum())
 
-    @pyqtSlot(str)
+    @Slot(str)
     def status_update(self, msg: str):
         """Päivitä VAIN status_label. Ei lisää logiin."""
         self.status_label.setText(f"Tila: {msg}")
 
-    @pyqtSlot(str)
+    @Slot(str)
     def handle_error(self, msg: str):
         """Päivitä status_label virhetilaan. Virhe on jo kirjattu lokiin."""
         self.status_label.setText("Tila: VIRHE")
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
 
-    @pyqtSlot(str)
+    @Slot(str)
     def log_update(self, msg: str):
         """Ainoa paikka, missä viesti menee QTextEditiin."""
         self._append_log(msg)
@@ -522,7 +522,7 @@ class BotManagerApp(QMainWindow):
         self.stop_button.setEnabled(False)
 
     def _on_tray_icon_activated(self, reason):
-        if reason == QSystemTrayIcon.DoubleClick:
+        if reason == QSystemTrayIcon.ActivationReason.DoubleClick:
             if self.isVisible():
                 self.hide()
             else:
@@ -536,16 +536,16 @@ class BotManagerApp(QMainWindow):
         self.tray_icon.showMessage(
             "Bot-Hallintapaneeli",
             "Sovellus jatkaa system tray:ssä.",
-            QSystemTrayIcon.Information,
+            QSystemTrayIcon.MessageIcon.Information,
             2000
         )
 
     def quit_application(self):
-        if self._version_check.state() != QProcess.NotRunning:
+        if self._version_check.state() != QProcess.ProcessState.NotRunning:
             self._version_check.blockSignals(True)
             self._version_check.kill()
             self._version_check.waitForFinished(2000)
-        if self.download_process.state() != QProcess.NotRunning:
+        if self.download_process.state() != QProcess.ProcessState.NotRunning:
             self.clipboard_checkbox.setChecked(False)
             self.download_process.finished.disconnect(self._download_finished)
             self.download_process.kill()
@@ -579,7 +579,7 @@ def main():
         manager.hide()
     manager.tray_icon.show()
 
-    sys.exit(app.exec_())
+    sys.exit(app.exec())
 
 
 if __name__ == "__main__":

@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-from PyQt5.QtCore import QProcess
+from PySide6.QtCore import QProcess
 from gui_launcher import BotManagerApp
 from tools.notification_sounds import NotificationSounds
 from tools.download_progress import ProgressReader
@@ -30,7 +30,7 @@ class ClipboardNotificationTests(unittest.TestCase):
             directory = Path(folder)
             (directory / "media.mp4").write_bytes(b"video")
             manager = self.manager(directory)
-            BotManagerApp._download_finished(manager, 0, QProcess.NormalExit)
+            BotManagerApp._download_finished(manager, 0, QProcess.ExitStatus.NormalExit)
             manager.clipboard.setMimeData.assert_called_once()
             manager.notification_sounds.play.assert_called_once_with("finished")
 
@@ -39,7 +39,7 @@ class ClipboardNotificationTests(unittest.TestCase):
             directory = Path(folder)
             (directory / "media.mp4").write_bytes(b"video")
             manager = self.manager(directory, enabled=False)
-            BotManagerApp._download_finished(manager, 0, QProcess.NormalExit)
+            BotManagerApp._download_finished(manager, 0, QProcess.ExitStatus.NormalExit)
             manager.clipboard.setMimeData.assert_not_called()
             manager.notification_sounds.play.assert_called_once_with("finished")
 
@@ -58,7 +58,7 @@ class ClipboardNotificationTests(unittest.TestCase):
                 )
                 manager._read_download_progress = lambda: BotManagerApp._read_download_progress(manager)
 
-                BotManagerApp._download_finished(manager, 0, QProcess.NormalExit)
+                BotManagerApp._download_finished(manager, 0, QProcess.ExitStatus.NormalExit)
 
                 manager.clipboard.setMimeData.assert_called_once()
                 manager.notification_sounds.play.assert_called_once_with("finished")
@@ -70,7 +70,7 @@ class ClipboardNotificationTests(unittest.TestCase):
                     manager.settings.setValue.assert_not_called()
 
     def test_failure_and_invalid_output(self):
-        for exit_code, status in ((1, QProcess.NormalExit), (0, QProcess.NormalExit), (-1, QProcess.CrashExit)):
+        for exit_code, status in ((1, QProcess.ExitStatus.NormalExit), (0, QProcess.ExitStatus.NormalExit), (-1, QProcess.ExitStatus.CrashExit)):
             with self.subTest(exit_code=exit_code, status=status), tempfile.TemporaryDirectory() as folder:
                 manager = self.manager(Path(folder), stderr=b"LATAUSVIRHE=Test error")
                 BotManagerApp._download_finished(manager, exit_code, status)
@@ -79,13 +79,13 @@ class ClipboardNotificationTests(unittest.TestCase):
 
     def test_failed_start_reports_error(self):
         manager = self.manager(Path("unused"))
-        BotManagerApp._download_error(manager, QProcess.FailedToStart)
+        BotManagerApp._download_error(manager, QProcess.ProcessError.FailedToStart)
         manager.notification_sounds.play.assert_called_once_with("error")
         manager._append_log.assert_called_once()
 
     def test_crash_signal_waits_for_finished_to_avoid_duplicate_sound(self):
         manager = self.manager(Path("unused"))
-        BotManagerApp._download_error(manager, QProcess.Crashed)
+        BotManagerApp._download_error(manager, QProcess.ProcessError.Crashed)
         manager.notification_sounds.play.assert_not_called()
 
     def test_bundled_files_are_short_distinct_pcm_wav(self):

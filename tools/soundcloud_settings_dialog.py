@@ -1,6 +1,6 @@
 """SoundCloud clipboard video preferences."""
 from dataclasses import asdict
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QFormLayout, QSpinBox, QComboBox,
     QCheckBox, QGroupBox, QDialogButtonBox, QMessageBox, QScrollArea, QWidget,
 )
@@ -112,13 +112,13 @@ class SoundCloudSettingsDialog(QDialog):
                 control.valueChanged.connect(update_preview)
         layout.addLayout(columns)
         self.finished.connect(preview.stop)
-        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults)
-        buttons.button(QDialogButtonBox.Save).setText("Tallenna")
-        buttons.button(QDialogButtonBox.Cancel).setText("Peruuta")
-        buttons.button(QDialogButtonBox.RestoreDefaults).setText("Palauta oletukset")
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel | QDialogButtonBox.StandardButton.RestoreDefaults)
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText("Tallenna")
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setText("Peruuta")
+        buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults).setText("Palauta oletukset")
         buttons.accepted.connect(self.save)
         buttons.rejected.connect(self.reject)
-        buttons.button(QDialogButtonBox.RestoreDefaults).clicked.connect(lambda: self.populate(SoundCloudVideoSettings()))
+        buttons.button(QDialogButtonBox.StandardButton.RestoreDefaults).clicked.connect(lambda: self.populate(SoundCloudVideoSettings()))
         layout.addWidget(buttons)
         try:
             current = SoundCloudVideoSettings.from_json(settings.value("clipboard/soundcloudVideoSettings", "{}"))

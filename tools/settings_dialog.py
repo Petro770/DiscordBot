@@ -4,7 +4,7 @@ from dataclasses import asdict
 from urllib.parse import urlsplit
 
 from dotenv import dotenv_values
-from PyQt5.QtWidgets import (
+from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QHeaderView, QLineEdit, QPushButton,
     QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QMessageBox,
 )
@@ -159,23 +159,23 @@ class SettingsDialog(QDialog):
         for title, rows in self._rows.items():
             table = QTableWidget(len(rows), 5)
             table.setHorizontalHeaderLabels(["Asetus", "Käytössä oleva arvo", "Lähde", "Tila", "Esimerkki / oletus"])
-            table.setEditTriggers(QTableWidget.NoEditTriggers)
+            table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
             table.verticalHeader().hide()
             table.setWordWrap(True)
             header = table.horizontalHeader()
-            header.setSectionResizeMode(QHeaderView.ResizeToContents)
-            header.setSectionResizeMode(1, QHeaderView.Stretch)
+            header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+            header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
             self._tables[title] = table
             tabs.addTab(table, title)
         self._populate()
-        buttons = QDialogButtonBox(QDialogButtonBox.Close)
-        buttons.button(QDialogButtonBox.Close).setText("Sulje")
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.button(QDialogButtonBox.StandardButton.Close).setText("Sulje")
         buttons.rejected.connect(self.reject)
         edit = QPushButton("Muokkaa .env…")
-        buttons.addButton(edit, QDialogButtonBox.ActionRole)
+        buttons.addButton(edit, QDialogButtonBox.ButtonRole.ActionRole)
         edit.clicked.connect(self._edit_env)
         copy = QPushButton("Kopioi asetustiedot")
-        buttons.addButton(copy, QDialogButtonBox.ActionRole)
+        buttons.addButton(copy, QDialogButtonBox.ButtonRole.ActionRole)
         copy.clicked.connect(self._copy)
         layout.addWidget(buttons)
 
@@ -203,7 +203,7 @@ class SettingsDialog(QDialog):
         except (OSError, UnicodeError) as exc:
             QMessageBox.warning(self, ".env-muokkaus", str(exc))
             return
-        if editor.exec_():
+        if editor.exec():
             self._rows = settings_rows(self._updater, self._settings, self._clipboard_enabled)
             self._populate()
 
