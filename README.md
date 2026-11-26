@@ -2,6 +2,23 @@
 
 DiscordBot on Pythonilla tehty Discord-botti, joka käsittelee kuvia ja medialinkkejä yksityisviesteissä ja määritetyllä palvelinkanavalla. Botti lataa mediaa YouTubesta, Instagramista, X:stä, TikTokista, Twitchistä ja SoundCloudista, pakkaa tarvittaessa videoita ja lähettää tuloksen Discordiin. Botti lähettää SoundCloud-kappaleen MP4-videona, jossa kansikuva näkyy koko ajan ja kappaleen nimi sekä artisti ensimmäiset viisi sekuntia. Jos videota ei saada tehtyä tai se ylittää Discordin kokorajan, botti käyttää MP3-tiedostoa. Kuvia voi myös tulostaa Windowsissa emoji-reaktiolla.
 
+## Lähdekoodikooste paikalliselle AI:lle
+
+Kokoa ensin työn aiheeseen sopivat tiedostot yhdeksi UTF-8-tekstitiedostoksi.
+
+```powershell
+python -m tools.export_ai_context ollama -o .ai-context/ollama.txt
+python -m tools.export_ai_context gui -o .ai-context/gui.txt
+python -m tools.export_ai_context media --include tests/test_soundcloud_beats.py -o .ai-context/media.txt
+```
+
+Profiili `all` kokoaa Python- ja PowerShell-lähdekoodin sekä projektin
+keskeiset ohjeet. `--with-tests` lisää testit ja toistettava `--include`
+lisää yksittäisiä Gitissä seurattuja tiedostoja. Koosteessa näkyy jokaisen
+tiedoston polku. Paikalliset `.env`-tiedostot, keskustelulokit ja
+käyttäjätiedot jätetään pois vakioprofiileista. Käytä uutta tulostiedoston
+nimeä, kun teet uuden koosteen.
+
 ## Versiot ja muutokset
 
 Käyttäjälle näkyvät muutokset löytyvät [changelog.json](changelog.json)-tiedostosta.
