@@ -2,14 +2,20 @@
 from typing import Optional
 import math
 import os
+import sys
 from pathlib import Path
 from dotenv import dotenv_values, load_dotenv
 
-# Values inherited from the caller retain priority over the project's .env.
 DOTENV_PATH = Path(__file__).resolve().with_name(".env")
-INHERITED_ENV_KEYS = frozenset(os.environ)
 DOTENV_STARTUP_VALUES = dotenv_values(DOTENV_PATH, interpolate=False)
-load_dotenv(DOTENV_PATH)
+# Older updaters passed the entire environment without identifying its origin.
+_legacy_restart = (
+    "--show-after-update" in sys.argv and "--fresh-restart-environment" not in sys.argv
+)
+_dotenv_keys = {key.upper() if os.name == "nt" else key
+                for key, value in DOTENV_STARTUP_VALUES.items() if value is not None}
+INHERITED_ENV_KEYS = frozenset(os.environ) - (_dotenv_keys if _legacy_restart else set())
+load_dotenv(DOTENV_PATH, override=_legacy_restart)
 DOTENV_ADDED_VALUES = {
     key: value for key, value in os.environ.items() if key not in INHERITED_ENV_KEYS
 }

@@ -326,7 +326,7 @@ class BotManagerApp(QMainWindow):
             raise UpdateError(
                 f"{exc}\n\nTarkista projektikansiossa git status, korjaa ilmoitettu ongelma ja yritä uudelleen."
             ) from exc
-        arguments = [str(PROJECT_DIR / "gui_launcher.py"), "--show-after-update"]
+        arguments = [str(PROJECT_DIR / "gui_launcher.py"), "--show-after-update", "--fresh-restart-environment"]
         if not was_running:
             arguments.append("--bot-stopped")
         environment = QProcessEnvironment.systemEnvironment()

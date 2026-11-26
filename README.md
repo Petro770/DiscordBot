@@ -56,7 +56,10 @@ Valitse yksi kortti ja paina **Päivitä ja käynnistä uudelleen**. Paneeli pys
 Git-työkopion ja avaa itsensä uudelleen samalla Python-ympäristöllä.
 Botti käynnistyy uudelleen, jos se oli käynnissä ennen päivitystä.
 Uusi prosessi lukee projektin `.env`-tiedoston uudelleen. Käynnistysympäristössä
-annetut muuttujat ovat edelleen etusijalla.
+annetut muuttujat ovat edelleen etusijalla. Jos päivityksen aloittaa
+vanha GUI, uusi prosessi antaa tiedostossa oleville arvoille etusijan sillä
+käynnistyskerralla. Jos poistit asetuksia tiedostosta ennen tällaista
+siirtymää, sulje paneeli kokonaan ja avaa se uudelleen normaalisti.
 
 Toiminto tarvitsee Gitin ja Gitillä kloonatun projektin. Päivitys odottaa,
 että medialataus on päättynyt. Paikalliset muutokset ja etähaarasta
