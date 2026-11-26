@@ -324,7 +324,16 @@ class BotManagerApp(QMainWindow):
         arguments = [str(PROJECT_DIR / "gui_launcher.py"), "--show-after-update"]
         if not was_running:
             arguments.append("--bot-stopped")
-        started, _ = QProcess.startDetached(str(python), arguments, str(PROJECT_DIR))
+        environment = QProcessEnvironment.systemEnvironment()
+        for key, value in config.DOTENV_ADDED_VALUES.items():
+            if environment.contains(key) and environment.value(key) == value:
+                environment.remove(key)
+        restart = QProcess()
+        restart.setProgram(str(python))
+        restart.setArguments(arguments)
+        restart.setWorkingDirectory(str(PROJECT_DIR))
+        restart.setProcessEnvironment(environment)
+        started, _ = restart.startDetached()
         if not started:
             raise UpdateError("Päivitys tehtiin, mutta hallintapaneelin uudelleenkäynnistys epäonnistui. Avaa se uudelleen.")
         self.quit_application()

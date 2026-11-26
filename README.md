@@ -46,6 +46,8 @@ näkyvät viimeisimmän commitin otsikko, tekijä, päivämäärä ja tunniste.
 Valitse yksi kortti ja paina **Päivitä ja käynnistä uudelleen**. Paneeli pysäyttää botin, päivittää
 Git-työkopion ja avaa itsensä uudelleen samalla Python-ympäristöllä.
 Botti käynnistyy uudelleen, jos se oli käynnissä ennen päivitystä.
+Uusi prosessi lukee projektin `.env`-tiedoston uudelleen. Käynnistysympäristössä
+annetut muuttujat ovat edelleen etusijalla.
 
 Toiminto tarvitsee Gitin ja Gitillä kloonatun projektin. Päivitys odottaa,
 että medialataus on päättynyt. Paikalliset muutokset ja etähaarasta

@@ -2,9 +2,16 @@
 from typing import Optional
 import math
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+# Values inherited from the caller retain priority over the project's .env.
+_inherited_keys = set(os.environ)
+load_dotenv(Path(__file__).resolve().with_name(".env"))
+DOTENV_ADDED_VALUES = {
+    key: value for key, value in os.environ.items() if key not in _inherited_keys
+}
+del _inherited_keys
 
 BOT_VERSION = "1.2.1"
 
