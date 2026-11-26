@@ -23,6 +23,7 @@ from tools.download_progress_widget import DownloadProgressWidget
 from tools.git_update import GitUpdate, UpdateError
 from tools.git_update_dialog import GitUpdateDialog
 from tools.ai_monitor import AiMonitor
+from tools.settings_dialog import SettingsDialog
 
 PROJECT_DIR = Path(__file__).resolve().parent
 
@@ -178,6 +179,7 @@ class BotManagerApp(QMainWindow):
         return QSystemTrayIcon(QIcon(), self)
 
     def setup_ui(self):
+        self.menuBar().addAction("Asetukset…", self._show_settings)
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
@@ -241,6 +243,9 @@ class BotManagerApp(QMainWindow):
         self.download_status = QLabel()
         self.download_status.setWordWrap(True)
         layout.addWidget(self.download_status)
+
+    def _show_settings(self):
+        SettingsDialog(self._git_update, self.settings, self.clipboard_checkbox.isChecked(), self).exec_()
 
     def _show_ai_monitor(self):
         self._ai_monitor.show()

@@ -38,6 +38,15 @@ Tarvitset Python 3.10:n tai uudemman sekä Discord-sovelluksen, jolle on luotu b
 
    Jos PowerShell estää skriptin suorituskäytännön vuoksi, voit käynnistää sen erillisessä PowerShell-prosessissa komennolla `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\install.ps1`. Vaihda tiedoston nimeksi `.\launch.ps1` käynnistystä varten.
 
+## Asetusten tarkastelu
+
+Pääikkunan ylävalikon **Asetukset…** näyttää käytössä olevat asetukset ja
+niiden lähteet. Hae asetuksen nimellä tai kopioi tiedot vianetsintää varten.
+Näkymä on vain luku -tilassa. Tokenista näkyy pelkkä tila, ja Ollama-osoitteista
+näytetään protokolla, palvelin ja portti. Käynnistyksen jälkeen muuttuneet
+`.env`-rivit, joihin käyttöympäristö ei aseta omaa arvoa, merkitään
+uudelleenkäynnistystä vaativiksi.
+
 ## Päivittäminen hallintapaneelista
 
 Avaa hallintapaneeli ja paina **Tarkista versio…**. Paneeli hakee
