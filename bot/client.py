@@ -5,29 +5,44 @@ import discord
 import config
 from config import TARGET_CHANNEL_ID
 from printer.queue import PrintQueue
-from bot.handlers import (
-    init_handlers,
-    route_message,
-    check_reaction,
-    cleanup_pending, check_url_reaction,
-)
+from bot.handlers import MessageHandlers
 from bot.attachments import ChannelAttachments
 from bot.ollama import OllamaReplies
 from core.logging import log
-from core.queue import init_queue
+from core.queue import TaskQueue
 from user.tracker import start_cleanup_task, track_unscheduled_message
+
+
+class BotClient(discord.Client):
+    async def close(self):
+        # Discord can call close more than once during shutdown.
+        cleanup = getattr(self, "_runtime_shutdown", None)
+        if cleanup is None:
+            cleanup = self._runtime_shutdown = asyncio.create_task(self._close_runtime())
+        await asyncio.shield(cleanup)
+
+    async def _close_runtime(self):
+        await super().close()
+        tasks = [task for name in ("_worker_task", "_cleanup_task", "_msg_cleanup_task")
+                 if (task := getattr(self, name, None)) is not None]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        if hasattr(self, "_task_queue"):
+            await self._task_queue.stop()
+            await self._message_handlers.close()
 
 
 def create_bot() -> discord.Client:
     intents = discord.Intents.default()
     intents.message_content = True
     intents.reactions = True
-    return discord.Client(intents=intents)
+    return BotClient(intents=intents)
 
 
 def register_events(bot: discord.Client, print_queue: PrintQueue):
-    # Alusta yhteiset handlerit (kerran)
-    init_handlers(bot, print_queue)
+    task_queue = bot._task_queue = TaskQueue()
+    handlers = bot._message_handlers = MessageHandlers(bot, print_queue, task_queue)
     attachments = ChannelAttachments(bot, config.ATTACHMENT_INDEX_CHANNEL_IDS)
 
     ollama = OllamaReplies() if config.ENABLE_OLLAMA else None
@@ -67,7 +82,7 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
             return
 
         if isinstance(message.channel, discord.DMChannel):
-            await route_message(message, [message.author.name])
+            await handlers.route_message(message, [message.author.name])
             return
 
         if message.channel.id != TARGET_CHANNEL_ID:
@@ -79,7 +94,7 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
             if gm and gm.display_name != message.author.name:
                 names.append(gm.display_name)
 
-        await route_message(message, names)
+        await handlers.route_message(message, names)
 
     @bot.event
     async def on_ready():
@@ -91,7 +106,7 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
             log.exception("Liiteindeksin käyttöönotto epäonnistui")
 
         # Alusta tehtäväjono (ennen kahta muuta)
-        await init_queue()
+        await task_queue.start()
 
         # 1) Käynnistä worker AINA (riippumatta kanavasta)
         task = getattr(bot, "_worker_task", None)
@@ -103,8 +118,10 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
         async def _periodic_cleanup():
             while True:
                 await asyncio.sleep(60)
-                await cleanup_pending()
-        bot._cleanup_task = asyncio.create_task(_periodic_cleanup())
+                await handlers.cleanup_pending()
+        task = getattr(bot, "_cleanup_task", None)
+        if task is None or task.done():
+            bot._cleanup_task = asyncio.create_task(_periodic_cleanup())
 
         # 3) Viestien automaattinen poisto (UUSI)
         task = getattr(bot, "_msg_cleanup_task", None)
@@ -144,7 +161,7 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
 
     @bot.event
     async def on_raw_reaction_add(reaction: discord.RawReactionActionEvent):
-        await check_reaction(reaction)
-        await check_url_reaction(reaction)
+        await handlers.check_reaction(reaction)
+        await handlers.check_url_reaction(reaction)
 
 

@@ -83,6 +83,16 @@
         {"type": "improve", "text": "Viestien oletussäilytys on 30 päivää, jos MESSAGE_RETENTION_DAYS puuttuu tai on tyhjä. Aiemmin asetettu arvo säilyy."},
         {"type": "improve", "text": "Suljetun changelog-DM:n tilalle voidaan lähettää hiljainen ilmoitus alkuperäiseen kanavaan."}
       ]
+    },
+    {
+      "version": "1.2.1",
+      "date": "2026-11-26",
+      "changes": [
+        {"type": "fix", "text": "Botin lähetysjono ja HTTP-istunto toimivat käynnistyksissä erillään ja sulkeutuvat botin mukana."},
+        {"type": "fix", "text": "Hallintapaneeli tarkistaa kohdehaaran Python-riippuvuudet ennen päivitystä. Windowsin GUI käynnistyy pythonw.exe:llä."},
+        {"type": "fix", "text": "Liiteindeksi odottaa SQLite-lukon vapautumista ja keskeyttää ilmoitettua kokoa suuremmat liitelataukset."},
+        {"type": "fix", "text": "Ollaman virheelliset mallitiedot käsitellään hallitusti ja FFmpeg-virheissä luetaan vain lokin loppu."}
+      ]
     }
   ]
 }

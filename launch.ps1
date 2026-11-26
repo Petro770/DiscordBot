@@ -39,6 +39,14 @@ try {
         return
     }
 
+    if ($Mode -eq 'Gui') {
+        $pythonw = Join-Path $PSScriptRoot '.venv\Scripts\pythonw.exe'
+        if (-not (Test-Path -LiteralPath $pythonw -PathType Leaf)) {
+            throw 'pythonw.exe is missing. Repair Windows Python or recreate .venv.'
+        }
+        Start-Process -FilePath $pythonw -ArgumentList 'gui_launcher.py' -WorkingDirectory $PSScriptRoot
+        exit 0
+    }
     & $python "$module.py"
     exit $LASTEXITCODE
 } finally {

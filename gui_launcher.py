@@ -308,6 +308,7 @@ class BotManagerApp(QMainWindow):
             python = python.with_name("pythonw.exe")
             if not python.is_file():
                 raise UpdateError("pythonw.exe puuttuu. Korjaa Python-asennus ja luo .venv uudelleen ennen päivitystä.")
+        self._git_update.check_dependencies(commit, Path(sys.executable))
         was_running = self._is_running
         self.stop_bot_service()
         if self.worker_thread and self.worker_thread.isRunning():

@@ -51,8 +51,9 @@ Toiminto tarvitsee Gitin ja Gitillä kloonatun projektin. Päivitys odottaa,
 että medialataus on päättynyt. Paikalliset muutokset ja etähaarasta
 poikkeavat paikalliset commitit pitää käsitellä Gitillä ennen päivitystä.
 Windowsissa päivitys vaatii käytössä olevan Python-ympäristön `pythonw.exe`-tiedoston.
-Jos valittu haara tarvitsee uusia Python-riippuvuuksia, asenna ne
-projektin `install.ps1`-skriptillä.
+Hallintapaneeli tarkistaa valitun haaran Python-riippuvuudet ennen työkopion
+vaihtoa. Jos niitä puuttuu, asenna kohdehaaran `requirements.txt`-tiedoston
+riippuvuudet nykyiseen virtuaaliympäristöön ja yritä uudelleen.
 
 ## Käyttö Discordissa
 

@@ -101,8 +101,11 @@ class TaskQueue:
         self._tasks: list[asyncio.Task] = []
         self._seq = 0
         self._running = False
+        self._closed = False
 
     async def start(self) -> None:
+        if self._closed:
+            raise RuntimeError("TaskQueue on suljettu.")
         if self._running:
             return
         self._running = True
@@ -113,6 +116,12 @@ class TaskQueue:
 
     async def stop(self) -> None:
         self._running = False
+        self._closed = True
+        while not self._pq.empty():
+            item = self._pq.get_nowait()
+            if item.result_future is not None:
+                item.result_future.cancel()
+            self._pq.task_done()
         for t in self._tasks:
             t.cancel()
         await asyncio.gather(*self._tasks, return_exceptions=True)
@@ -121,13 +130,16 @@ class TaskQueue:
     async def _loop(self, wid: int) -> None:
         while self._running:
             try:
-                item = await asyncio.wait_for(self._pq.get(), timeout=1.0)
-            except asyncio.TimeoutError:
-                continue
+                item = await self._pq.get()
             except asyncio.CancelledError:
                 return
             try:
-                await self._run(item)
+                if item.result_future is None or not item.result_future.cancelled():
+                    await self._run(item)
+            except asyncio.CancelledError:
+                if item.result_future is not None:
+                    item.result_future.cancel()
+                raise
             except Exception as exc:
                 if item.result_future and not item.result_future.done():
                     item.result_future.set_exception(exc)
@@ -154,6 +166,7 @@ class TaskQueue:
         priority: int = 0,
     ):
         """Lisää tehtävä johon ja odota tuloksen. Palauttaa koron return-arvon."""
+        await self.start()
         self._seq += 1
         fut: asyncio.Future = asyncio.get_running_loop().create_future()
         item = _QueueItem(
@@ -181,24 +194,3 @@ class TaskQueue:
             user_id=user_id,
             priority=priority,
         )
-
-
-# ============================================================
-# SINGLETON
-# ============================================================
-
-_instance: Optional[TaskQueue] = None
-
-
-async def init_queue(**kwargs) -> TaskQueue:
-    global _instance
-    if _instance is None:
-        _instance = TaskQueue(**kwargs)
-        await _instance.start()
-    return _instance
-
-
-def get_task_queue() -> TaskQueue:
-    if _instance is None:
-        raise RuntimeError("TaskQueue ei ole alustettu. Kutsu init_queue() ensin.")
-    return _instance

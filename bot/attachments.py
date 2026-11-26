@@ -123,6 +123,8 @@ class ChannelAttachments:
                 async with session.get(attachment.url) as response:
                     response.raise_for_status()
                     async for chunk in response.content.iter_chunked(128 * 1024):
+                        if file.tell() + len(chunk) > attachment.size:
+                            raise aiohttp.ClientPayloadError("Liitedata ylittää Discordin ilmoittaman koon")
                         digest.update(chunk)
                         file.write(chunk)
             log.info("Liite %s: ladattu %s B (%.2f s), lasketaan tunnisteet",
@@ -164,7 +166,7 @@ class ChannelAttachments:
                     continue
                 try:
                     image = await self._fingerprint(attachment)
-                except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                except (aiohttp.ClientError, asyncio.TimeoutError, OSError) as exc:
                     status = getattr(exc, "status", None)
                     log.warning(
                         "Liiteindeksi: liite=%s viesti=%s lataus epäonnistui (%s, HTTP %s)",
