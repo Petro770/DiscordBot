@@ -468,15 +468,17 @@ def _encode_video(command: list[str], envelopes: tuple[array, ...], message_id: 
             ffmpeg.wait(timeout=5)
             raise
         if timed_out.is_set():
-            errors.seek(0)
-            raise subprocess.TimeoutExpired(command, settings.encode_timeout, stderr=errors.read())
+            error_size = errors.seek(0, os.SEEK_END)
+            errors.seek(max(0, error_size - 65536))
+            raise subprocess.TimeoutExpired(command, settings.encode_timeout, stderr=errors.read(65536))
         log.info(
             "SoundCloud-video [%s]: FFmpeg päättyi %.1f s jälkeen (koodi %d, %d ruutua)",
             message_id, monotonic() - started, returncode, frames_written,
         )
         if returncode:
-            errors.seek(0)
-            raise subprocess.CalledProcessError(returncode, command, stderr=errors.read())
+            error_size = errors.seek(0, os.SEEK_END)
+            errors.seek(max(0, error_size - 65536))
+            raise subprocess.CalledProcessError(returncode, command, stderr=errors.read(65536))
 
 
 def _fallback_cover() -> Image.Image:

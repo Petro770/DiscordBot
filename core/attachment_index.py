@@ -72,7 +72,7 @@ class AttachmentIndex:
 
     def initialize(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(sqlite3.connect(self.path)) as db:
+        with closing(sqlite3.connect(self.path, timeout=10.0)) as db:
             db.execute("PRAGMA journal_mode=WAL")
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS attachments (
@@ -103,7 +103,7 @@ class AttachmentIndex:
             """)
 
     def contains(self, channel_id: int, attachment_id: int) -> bool:
-        with closing(sqlite3.connect(self.path)) as db:
+        with closing(sqlite3.connect(self.path, timeout=10.0)) as db:
             return db.execute(
                 "SELECT 1 FROM attachments WHERE channel_id = ? AND attachment_id = ?",
                 (channel_id, attachment_id),
@@ -111,7 +111,7 @@ class AttachmentIndex:
 
     def save(self, channel_id: int, message_id: int, attachment_id: int,
              filename: str, image: Fingerprint) -> bool:
-        with closing(sqlite3.connect(self.path)) as db, db:
+        with closing(sqlite3.connect(self.path, timeout=10.0)) as db, db:
             result = db.execute("""
                 INSERT INTO attachments
                     (channel_id, attachment_id, message_id, filename,
@@ -124,7 +124,7 @@ class AttachmentIndex:
 
     def save_message_author(self, channel_id: int, message_id: int, author_id: int,
                             is_bot: bool) -> None:
-        with closing(sqlite3.connect(self.path)) as db, db:
+        with closing(sqlite3.connect(self.path, timeout=10.0)) as db, db:
             db.execute("""
                 INSERT INTO attachment_message_authors (channel_id, message_id, author_id, is_bot)
                 VALUES (?, ?, ?, ?)
@@ -134,7 +134,7 @@ class AttachmentIndex:
     def exact_repost_stats(
         self, channel_id: int, message_id: int, author_id: int, sha256: bytes
     ) -> RepostStats | None:
-        with closing(sqlite3.connect(self.path)) as db:
+        with closing(sqlite3.connect(self.path, timeout=10.0)) as db:
             row = db.execute("""
                 SELECT MIN(att.message_id),
                        COUNT(DISTINCT CASE WHEN authors.author_id = :author THEN att.message_id END),
@@ -155,7 +155,7 @@ class AttachmentIndex:
     ) -> tuple[Optional[int], dict[bytes, int]]:
         """Rank known authors across channels and per exact attachment hash."""
         placeholders = ", ".join("?" for _ in hashes)
-        with closing(sqlite3.connect(self.path)) as db:
+        with closing(sqlite3.connect(self.path, timeout=10.0)) as db:
             rows = db.execute(f"""
                 WITH reposts AS (
                     SELECT DISTINCT authors.author_id, current.message_id, current.sha256
@@ -192,7 +192,7 @@ class AttachmentIndex:
 
     def repost_summary(self, channel_id: int) -> tuple[dict[int, int], list[int]]:
         """Group known reposts by author and return message IDs without an author."""
-        with closing(sqlite3.connect(self.path)) as db:
+        with closing(sqlite3.connect(self.path, timeout=10.0)) as db:
             rows = db.execute("""
                 WITH reposts AS (
                     SELECT DISTINCT current.message_id, authors.author_id, authors.is_bot
@@ -227,7 +227,7 @@ class AttachmentIndex:
         if not author_ids:
             return {}
         placeholders = ", ".join("?" for _ in author_ids)
-        with closing(sqlite3.connect(self.path)) as db:
+        with closing(sqlite3.connect(self.path, timeout=10.0)) as db:
             rows = db.execute(f"""
                 WITH reposts AS (
                     SELECT authors.author_id, current.message_id,
@@ -268,7 +268,7 @@ class AttachmentIndex:
         return examples
 
     def history_position(self, channel_id: int) -> Optional[int]:
-        with closing(sqlite3.connect(self.path)) as db:
+        with closing(sqlite3.connect(self.path, timeout=10.0)) as db:
             row = db.execute(
                 "SELECT message_id FROM history_progress WHERE channel_id = ?",
                 (channel_id,),
@@ -276,7 +276,7 @@ class AttachmentIndex:
             return row[0] if row else None
 
     def advance_history(self, channel_id: int, message_id: int) -> None:
-        with closing(sqlite3.connect(self.path)) as db, db:
+        with closing(sqlite3.connect(self.path, timeout=10.0)) as db, db:
             db.execute("""
                 INSERT INTO history_progress (channel_id, message_id) VALUES (?, ?)
                 ON CONFLICT (channel_id) DO UPDATE SET
@@ -295,7 +295,7 @@ class AttachmentIndex:
             "limit": limit,
         }
         earlier_only = "AND message_id < :before" if before_message_id is not None else ""
-        with closing(sqlite3.connect(self.path)) as db:
+        with closing(sqlite3.connect(self.path, timeout=10.0)) as db:
             exact = [
                 Match(message_id, exact=True)
                 for message_id, in db.execute(f"""

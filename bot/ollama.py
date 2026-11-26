@@ -50,6 +50,9 @@ async def _model_kind(session, host: str, model: str, timeout: aiohttp.ClientTim
             f"{host}/api/show", json={"model": model}, timeout=timeout, allow_redirects=False,
         ) as response:
             data = await response.json()
+        if not isinstance(data, dict) or "error" in data:
+            log.warning("Ollama %s / %s: /api/show palautti virheellisen rakenteen", host, model)
+            return "unavailable"
         if data.get("remote_host"):
             return "remote"
         capabilities = data.get("capabilities")
@@ -122,7 +125,7 @@ class OllamaHosts:
         if cached and cached[0] > monotonic():
             return cached[1]
         kind = await _model_kind(session, host, model, timeout)
-        self._model_kinds[key] = (monotonic() + (300 if kind else 30), kind)
+        self._model_kinds[key] = (monotonic() + (30 if kind in {None, "unavailable"} else 300), kind)
         return kind
 
     @asynccontextmanager
@@ -154,9 +157,13 @@ async def _generate_on_host(
                 allow_redirects=False,
             ) as response:
                 data = await response.json()
+            entries = data.get("models") if isinstance(data, dict) else None
+            if not isinstance(entries, list):
+                raise ValueError("Mallilista puuttuu Ollaman vastauksesta")
             models = tuple(
-                entry["name"] for entry in data["models"]
-                if entry.get("name") and not entry.get("remote_host")
+                entry["name"] for entry in entries
+                if isinstance(entry, dict) and isinstance(entry.get("name"), str)
+                and entry["name"].strip() and not entry.get("remote_host")
                 and not _is_cloud_model(entry["name"])
             )
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError, KeyError, TypeError, AttributeError) as exc:
@@ -189,7 +196,7 @@ async def _generate_on_host(
                 host, model, message_id, image is not None,
             )
             trace("model_capabilities_unknown", message_id, host=host, model=model)
-        if kind in {"remote", "missing"} or (image is not None and kind != "vision") or (image is None and kind == "vision"):
+        if kind in {"remote", "missing", "unavailable"} or (image is not None and kind != "vision") or (image is None and kind == "vision"):
             log.info("Ollama %s / %s: ohitettu | mallityyppi=%s | kuvapyyntö=%s",
                      host, model, kind, image is not None)
             trace("model_skipped", message_id, host=host, model=model, model_kind=kind,

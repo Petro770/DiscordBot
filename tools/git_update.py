@@ -1,6 +1,7 @@
 """Safe Git operations for the desktop updater."""
 import os
 import subprocess
+from tempfile import TemporaryDirectory
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -74,6 +75,29 @@ class GitUpdate:
         if local and self.git("merge-base", local, commit, allowed=(0, 1)) != local:
             raise UpdateError(f"Haarassa {branch} on paikallisia committeja. Yhdistä ne Gitillä ennen päivitystä.")
         return current != branch or local != commit
+
+    def check_dependencies(self, commit: str, python: Path) -> None:
+        requirements = self.git("show", f"{commit}:requirements.txt")
+        with TemporaryDirectory() as directory:
+            manifest = Path(directory) / "requirements.txt"
+            manifest.write_text(requirements + "\n", encoding="utf-8")
+            try:
+                result = subprocess.run(
+                    (str(python), "-m", "pip", "install", "--dry-run", "--no-index",
+                     "--disable-pip-version-check", "-r", str(manifest)),
+                    cwd=self.directory, capture_output=True, text=True, encoding="utf-8",
+                    errors="replace", timeout=30,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise UpdateError("Valitun version Python-riippuvuuksia ei saatu tarkistettua.") from exc
+        if result.returncode:
+            detail = result.stderr.strip() or result.stdout.strip()
+            raise UpdateError(
+                "Valitun haaran Python-riippuvuudet eivät ole kunnossa. Työkopio säilytettiin. "
+                "Asenna kohdehaaran requirements.txt:n riippuvuudet tähän Python-ympäristöön ja yritä uudelleen."
+                + (f"\n\n{detail}" if detail else "")
+            )
 
     def apply(self, branch: str, commit: str):
         if not self.check(branch, commit):
