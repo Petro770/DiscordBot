@@ -42,7 +42,11 @@ Tarvitset Python 3.10:n tai uudemman sekä Discord-sovelluksen, jolle on luotu b
 
 Pääikkunan ylävalikon **Asetukset…** näyttää käytössä olevat asetukset ja
 niiden lähteet. Hae asetuksen nimellä tai kopioi tiedot vianetsintää varten.
-Näkymä on vain luku -tilassa. Tokenista näkyy pelkkä tila, ja Ollama-osoitteista
+**Esimerkki / oletus** näyttää projektin `example.env`-arvon, kun sellainen
+on määritetty. **Muokkaa .env…** avaa paikallisen tiedoston erilliseen
+muokkaimeen. Jos tiedosto puuttuu, pohjana käytetään `example.env`-tiedostoa.
+Tallenna muutokset ja käynnistä sovellus uudelleen. Asetustaulukossa
+tokenista näkyy pelkkä tila, ja Ollama-osoitteista
 näytetään protokolla, palvelin ja portti. Käynnistyksen jälkeen muuttuneet
 `.env`-rivit, joihin käyttöympäristö ei aseta omaa arvoa, merkitään
 uudelleenkäynnistystä vaativiksi.

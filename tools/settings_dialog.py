@@ -6,11 +6,12 @@ from urllib.parse import urlsplit
 from dotenv import dotenv_values
 from PyQt5.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QHeaderView, QLineEdit, QPushButton,
-    QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QMessageBox,
 )
 
 import config
 from tools.git_update import UpdateError
+from tools.env_editor import EnvEditor
 from tools.soundcloud_video_settings import SoundCloudVideoSettings
 
 
@@ -85,7 +86,7 @@ def settings_rows(updater, settings, clipboard_enabled):
     except UpdateError:
         branch, commit = "", ""
     try:
-        disk = dotenv_values(config.DOTENV_PATH, interpolate=False)
+        disk = dotenv_values(config.DOTENV_PATH, interpolate=False, encoding="utf-8-sig")
         env_status = "Löytyi" if config.DOTENV_PATH.is_file() else "Tiedosto puuttuu"
     except (OSError, UnicodeError):
         disk = config.DOTENV_STARTUP_VALUES
@@ -141,6 +142,11 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Asetukset")
         self.resize(920, 560)
+        self._updater = updater
+        self._settings = settings
+        self._clipboard_enabled = clipboard_enabled
+        self._template = config.DOTENV_PATH.with_name("example.env")
+        self._examples = dotenv_values(self._template, interpolate=False, encoding="utf-8-sig")
         self._rows = settings_rows(updater, settings, clipboard_enabled)
         self._tables = {}
         layout = QVBoxLayout(self)
@@ -151,29 +157,55 @@ class SettingsDialog(QDialog):
         tabs = QTabWidget()
         layout.addWidget(tabs)
         for title, rows in self._rows.items():
-            table = QTableWidget(len(rows), 4)
-            table.setHorizontalHeaderLabels(["Asetus", "Käytössä oleva arvo", "Lähde", "Tila"])
+            table = QTableWidget(len(rows), 5)
+            table.setHorizontalHeaderLabels(["Asetus", "Käytössä oleva arvo", "Lähde", "Tila", "Esimerkki / oletus"])
             table.setEditTriggers(QTableWidget.NoEditTriggers)
             table.verticalHeader().hide()
             table.setWordWrap(True)
             header = table.horizontalHeader()
             header.setSectionResizeMode(QHeaderView.ResizeToContents)
             header.setSectionResizeMode(1, QHeaderView.Stretch)
-            for row, cells in enumerate(rows):
-                for column, value in enumerate(cells):
-                    item = QTableWidgetItem(value)
-                    item.setToolTip(value)
-                    table.setItem(row, column, item)
-            table.resizeRowsToContents()
             self._tables[title] = table
             tabs.addTab(table, title)
+        self._populate()
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         buttons.button(QDialogButtonBox.Close).setText("Sulje")
         buttons.rejected.connect(self.reject)
+        edit = QPushButton("Muokkaa .env…")
+        buttons.addButton(edit, QDialogButtonBox.ActionRole)
+        edit.clicked.connect(self._edit_env)
         copy = QPushButton("Kopioi asetustiedot")
         buttons.addButton(copy, QDialogButtonBox.ActionRole)
         copy.clicked.connect(self._copy)
         layout.addWidget(buttons)
+
+    def _populate(self):
+        for title, rows in self._rows.items():
+            table = self._tables[title]
+            table.setRowCount(len(rows))
+            for row, cells in enumerate(rows):
+                key = cells[0]
+                example = self._examples.get(key)
+                if key == "DISCORD_TOKEN":
+                    example = None
+                elif key == "OLLAMA_HOSTS" and example:
+                    example = ", ".join(_safe_origin(value.strip()) for value in example.split(","))
+                for column, value in enumerate((*cells, "Tyhjä" if example == "" else example or "–")):
+                    item = QTableWidgetItem(value)
+                    item.setToolTip(value)
+                    table.setItem(row, column, item)
+            table.resizeRowsToContents()
+        self._filter(self.search.text())
+
+    def _edit_env(self):
+        try:
+            editor = EnvEditor(config.DOTENV_PATH, self._template, self)
+        except (OSError, UnicodeError) as exc:
+            QMessageBox.warning(self, ".env-muokkaus", str(exc))
+            return
+        if editor.exec_():
+            self._rows = settings_rows(self._updater, self._settings, self._clipboard_enabled)
+            self._populate()
 
     def _filter(self, text):
         query = text.strip().casefold()
