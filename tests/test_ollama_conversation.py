@@ -98,3 +98,13 @@ class OllamaConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(count, 4)
         self.assertTrue(background[-1]["teksti"].startswith("109"))
         self.assertLessEqual(sum(len(item["teksti"]) for item in background), 1200)
+
+    def test_long_repeated_answer_is_rejected_but_short_reply_is_allowed(self):
+        from bot.ollama import _repeats_previous_answer
+
+        old = "Edellisessä vastauksessa oli pitkä kuvaus. " * 5
+        history = [{"role": "assistant", "content": old}]
+        self.assertTrue(_repeats_previous_answer(old + "Uusi lause.", history, "{}"))
+        self.assertFalse(_repeats_previous_answer("Moi!", history, "{}"))
+        background = {"kanavaviestit": [{"kirjoittaja": "botti", "teksti": old}]}
+        self.assertTrue(_repeats_previous_answer(old, [], json.dumps(background)))

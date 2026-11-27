@@ -177,6 +177,11 @@ vakiovirheviestit suodatetaan taustasta. Taustatekstin enimmäismäärä on
 jos haluat käyttää vain botin omia AI-vuoroja. Asetuksen vaihteluväli on 0–30.
 Haku käyttää botin viestihistorian lukuoikeutta.
 
+Qwen3:n tekstichat pyytää Ollamaa vastaamaan ilman erillistä
+päättelyvaihetta. Jos vastaus alkaa pitkällä, lähes sellaisenaan
+toistetulla aiemmalla botin vastauksella, botti hylkää sen ja käyttää
+nykyistä mallien varajärjestystä.
+
 ### AI-keskustelujen seuranta
 
 Hallintapaneelin **AI-keskustelut…**-ikkunassa näkyvät aktiiviset ja

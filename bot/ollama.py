@@ -33,6 +33,19 @@ def _echoes_internal_context(answer: str) -> bool:
     )
 
 
+def _repeats_previous_answer(answer: str, history: list[dict[str, str]], prompt: str) -> bool:
+    normalized = " ".join(answer.casefold().split())
+    background = json.loads(prompt).get("kanavaviestit", [])
+    previous = [
+        item["content"] for item in history if item["role"] == "assistant"
+    ] + [item["teksti"] for item in background if item["kirjoittaja"] == "botti"]
+    for text in previous:
+        prefix = " ".join(text.casefold().split())[:160]
+        if len(prefix) >= 100 and normalized.startswith(prefix):
+            return True
+    return False
+
+
 def _is_cloud_model(model: str) -> bool:
     name = model.lower()
     return name.endswith(":cloud") or name.split(":", 1)[0].endswith("-cloud")
@@ -205,7 +218,10 @@ async def _generate_on_host(
         attempts += 1
         started = monotonic()
         log.info("Ollama %s / %s: lähetetään chat-pyyntö", host, model)
-        trace("model_attempt", message_id, host=host, model=model)
+        # Qwen3 can spend the entire reply budget on reasoning in casual chat.
+        model_family = model.rsplit("/", 1)[-1].split(":", 1)[0].casefold()
+        request_options = {"think": False} if image is None and model_family == "qwen3" else {}
+        trace("model_attempt", message_id, host=host, model=model, **request_options)
         try:
             async with session.post(
                 f"{host}/api/chat",
@@ -216,6 +232,7 @@ async def _generate_on_host(
                         *history,
                         user_message,
                     ],
+                    **request_options,
                     "stream": False,
                     "options": {"num_predict": 500},
                 },
@@ -231,7 +248,8 @@ async def _generate_on_host(
                       reason="invalid_response")
                 continue
             trace("model_response", message_id, host=host, model=model, content=raw_answer,
-                  done_reason=data.get("done_reason"), elapsed_seconds=round(monotonic() - started, 3),
+                  done_reason=data.get("done_reason"), has_thinking=bool(reply.get("thinking")),
+                  elapsed_seconds=round(monotonic() - started, 3),
                   **_response_metrics(data))
             answer = raw_answer.strip()
             if is_update_notice(split_style(answer)[0]):
@@ -245,7 +263,11 @@ async def _generate_on_host(
                 trace("model_response_rejected", message_id, host=host, model=model,
                       reason="internal_context_echo")
                 continue
-            if split_style(answer)[0]:
+            visible_answer, _ = split_style(answer)
+            if _repeats_previous_answer(visible_answer, history, prompt):
+                trace("model_response_rejected", message_id, host=host, model=model, reason="repeated_answer")
+                continue
+            if visible_answer:
                 log.info("Ollama %s / %s: vastaus saatu (%.1f s)", host, model, monotonic() - started)
                 return answer, model, attempts
             log.warning("Ollama %s / %s: ei käyttäjälle tarkoitettua vastaustekstiä", host, model)
