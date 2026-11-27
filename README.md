@@ -171,7 +171,9 @@ Botti hakee oletuksena enintään 12 taustaviestiä Discord-ketjusta,
 yksityisviestikeskustelusta tai tavallisen kanavan viestin vastausketjusta.
 Muistissa olevat AI-vuorot välitetään mallille käyttäjän ja avustajan
 viesteinä. Muisti säilyttää näyttönimet ja poistaa samojen vuorojen
-kaksoiskappaleet Discord-taustasta. Aseta `OLLAMA_RECENT_MESSAGES=0`,
+kaksoiskappaleet Discord-taustasta. Botin päivitysilmoitukset ja Ollaman
+vakiovirheviestit suodatetaan taustasta. Taustatekstin enimmäismäärä on
+1 200 merkkiä, ja nykyinen pyyntö annetaan mallille syötteen lopussa. Aseta `OLLAMA_RECENT_MESSAGES=0`,
 jos haluat käyttää vain botin omia AI-vuoroja. Asetuksen vaihteluväli on 0–30.
 Haku käyttää botin viestihistorian lukuoikeutta.
 

@@ -64,3 +64,37 @@ class OllamaConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(strip_repeat_greeting("Moi!\nTässä on vastaus."), "Tässä on vastaus.")
         self.assertEqual(strip_repeat_greeting("Hei!"), "Hei!")
         self.assertEqual(strip_repeat_greeting('Sano "Hei!"'), 'Sano "Hei!"')
+
+    async def test_update_notices_and_fallbacks_do_not_become_background(self):
+        question = self.message(104)
+        notice = self.message(103)
+        notice.author = SimpleNamespace(id=2, bot=True)
+        notice.content = "🛸 **Botin päivitykset**\nVersio 1.2.1"
+        fallback = self.message(102)
+        fallback.author = notice.author
+        fallback.content = "Ollama ei saanut muodostettua vastausta. Palvelin voi olla poissa käytöstä."
+        conversation = self.message(101)
+        conversation.author = notice.author
+        conversation.content = "Kyllä, voidaan jutella."
+        payload, _, count, _ = await prepare_people(
+            question, "osaatko tehdä voltin?", 2, [notice, fallback, conversation],
+        )
+        data = json.loads(payload)
+        self.assertEqual(count, 1)
+        self.assertEqual(data["kanavaviestit"][0]["teksti"], conversation.content)
+        self.assertEqual(list(data)[-1], "viesti")
+        memory = SessionMemory()
+        memory.remember((10, None), payload, "En fyysisesti.", None)
+        self.assertEqual(list(json.loads(memory.add_context((10, None), payload)))[-1], "viesti")
+
+    async def test_background_preserves_newest_text_within_budget(self):
+        question = self.message(110)
+        ancestors = [self.message(i) for i in range(109, 103, -1)]
+        for message in ancestors:
+            message.content = str(message.id) + " x" * 250
+        with patch("config.OLLAMA_RECENT_MESSAGES", 12):
+            payload, _, count, _ = await prepare_people(question, "Uusi aihe", 2, ancestors)
+        background = json.loads(payload)["kanavaviestit"]
+        self.assertEqual(count, 4)
+        self.assertTrue(background[-1]["teksti"].startswith("109"))
+        self.assertLessEqual(sum(len(item["teksti"]) for item in background), 1200)

@@ -68,6 +68,7 @@ class SessionMemory:
         data["istunto"] = {"jatkuu": bool(session.exchanges)}
         if session.style:
             data["istunto"]["tyyli"] = session.style
+        data["viesti"] = data.pop("viesti")
         return json.dumps(data, ensure_ascii=False)
 
     def chat_history(self, scope: tuple[int, int | None]) -> list[dict[str, str]]:

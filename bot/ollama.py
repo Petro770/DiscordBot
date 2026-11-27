@@ -12,7 +12,7 @@ import aiohttp
 import discord
 
 import config
-from bot.ollama_people import PEOPLE_INSTRUCTIONS, conversation_scope, prepare_people, render_people
+from bot.ollama_people import PEOPLE_INSTRUCTIONS, conversation_scope, is_update_notice, prepare_people, render_people
 from bot.ollama_style import STYLE_INSTRUCTIONS, SessionMemory, split_style, strip_repeat_greeting
 from bot.ollama_trace import setup_trace, trace
 from core.logging import log
@@ -234,6 +234,9 @@ async def _generate_on_host(
                   done_reason=data.get("done_reason"), elapsed_seconds=round(monotonic() - started, 3),
                   **_response_metrics(data))
             answer = raw_answer.strip()
+            if is_update_notice(split_style(answer)[0]):
+                trace("model_response_rejected", message_id, host=host, model=model, reason="update_notice")
+                continue
             if _echoes_internal_context(answer):
                 log.warning(
                     "Ollama %s / %s: sisäisen kontekstin toistanut vastaus hylättiin | viesti=%s",
