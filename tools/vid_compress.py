@@ -3,11 +3,14 @@ import json
 import os
 import subprocess
 
+from downloaders.base import ffmpeg_executables
+
 
 def get_media_info(input_path: str) -> tuple[float, int]:
     """Hakee videon keston ja ääniraidan bittivirran ffprobella."""
+    _, ffprobe = ffmpeg_executables()
     cmd = [
-        "ffprobe", "-v", "quiet", "-print_format", "json",
+        ffprobe, "-v", "quiet", "-print_format", "json",
         "-show_format", "-show_streams", input_path,
     ]
     # ffprobe tuottaa UTF-8:aa, mutta Windowsin oletus-encoding voi olla
@@ -58,14 +61,15 @@ def compress_to_720p(
             "Video on liian pitkä mahtuakseen rajalle edes minimilaadulla."
         )
 
+    ffmpeg, _ = ffmpeg_executables()
     pass1_cmd = [
-        "ffmpeg", "-y", "-i", input_path,
+        ffmpeg, "-y", "-i", input_path,
         "-vf", "scale=-2:720",
         "-c:v", "libx264", "-b:v", str(video_bitrate),
         "-pass", "1", "-passlogfile", passlog_prefix, "-an", "-f", "mp4", os.devnull,
     ]
     pass2_cmd = [
-        "ffmpeg", "-y", "-i", input_path,
+        ffmpeg, "-y", "-i", input_path,
         "-vf", "scale=-2:720",
         "-c:v", "libx264", "-b:v", str(video_bitrate),
         "-pass", "2", "-passlogfile", passlog_prefix,

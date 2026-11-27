@@ -6,15 +6,11 @@ import tempfile
 from urllib.parse import urlparse, parse_qs
 
 import yt_dlp
-import static_ffmpeg
-from static_ffmpeg import run
 
 from core.logging import log
 from core.models import VideoInfo, NonRetryableError
 
-# ffmpeg-biit (kerran käynnistyksessä)
-static_ffmpeg.add_paths(weak=True)
-_ffmpeg_path, _ = run.get_or_fetch_platform_executables_else_raise()
+from downloaders.base import ffmpeg_executables
 
 MAX_RETRIES = 2
 
@@ -128,7 +124,7 @@ def _build_opts(output_dir: str, max_height: int = 720) -> dict:
         ),
         "outtmpl": os.path.join(output_dir, "%(id)s.%(ext)s"),
         "noplaylist": True,
-        "ffmpeg_location": _ffmpeg_path,
+        "ffmpeg_location": ffmpeg_executables()[0],
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,
@@ -210,9 +206,9 @@ async def download_video(url: str, max_height: int = 720) -> VideoInfo | None:
                 size_mb = os.path.getsize(result.filepath) / (1024 * 1024)
                 log.info("✅ Lataus valmis: %s (%.1f MB)", result.filename, size_mb)
             return result
-        except NonRetryableError:
+        except NonRetryableError as error:
             # Älä logaa errorina – tämä on odotettu tilanne
-            log.warning("🚫 YouTube: Video ei ole saatavilla: %s", clean)
+            log.warning("🚫 YouTube: %s | %s", clean, error)
             raise  # anna bot.py:n hoitaa
         except Exception as e:
             if attempt < MAX_RETRIES:

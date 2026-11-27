@@ -6,14 +6,11 @@ import shutil
 import tempfile
 
 import yt_dlp
-import static_ffmpeg
-from static_ffmpeg import run
 
 from core.logging import log
 from core.models import VideoInfo, NonRetryableError
 
-static_ffmpeg.add_paths(weak=True)
-_ffmpeg_path, _ = run.get_or_fetch_platform_executables_else_raise()
+from downloaders.base import ffmpeg_executables
 
 DISCORD_FILE_LIMIT = 25 * 1024 * 1024  # 25 MB
 
@@ -103,13 +100,14 @@ def _check_non_retryable(error: Exception) -> NonRetryableError | None:
 
 def _download_sync(url: str) -> VideoInfo | None:
     """Synchroninen lataus. Palauttaa VideoInfo-objektin."""
+    ffmpeg_path, _ = ffmpeg_executables()
     tmpdir = tempfile.mkdtemp(prefix="tw_")
 
     ydl_opts = {
         "format": "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
         "outtmpl": os.path.join(tmpdir, "video.%(ext)s"),
         "noplaylist": True,
-        "ffmpeg_location": _ffmpeg_path,
+        "ffmpeg_location": ffmpeg_path,
         "merge_output_format": "mp4",
         "quiet": True,
         "no_warnings": True,

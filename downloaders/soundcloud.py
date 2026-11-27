@@ -8,12 +8,11 @@ from urllib.parse import urljoin
 
 import aiohttp
 import yt_dlp
-from static_ffmpeg import run
 
 from core.logging import log
 from tools.download_progress import report, download_hook
 from core.models import NonRetryableError, VideoInfo
-from downloaders.base import finalize
+from downloaders.base import ffmpeg_executables, finalize
 
 
 _TRACK_URL = re.compile(
@@ -68,7 +67,7 @@ def _download_sync(url: str, as_video: bool = False, audio_kbps: int = 128) -> V
     with tempfile.TemporaryDirectory(prefix="soundcloud_") as directory:
         audio_path = Path(directory) / "track.mp3"
         report("prepare", "Varmistetaan FFmpeg ja haetaan kappaleen tiedot…")
-        ffmpeg_path, _ = run.get_or_fetch_platform_executables_else_raise()
+        ffmpeg_path, _ = ffmpeg_executables()
         options = {
             "format": "bestaudio",
             "allowed_extractors": ["soundcloud"],

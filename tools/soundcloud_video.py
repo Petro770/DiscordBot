@@ -23,13 +23,13 @@ from zipfile import ZipFile, ZIP_DEFLATED
 
 import aiohttp
 from PIL import Image, ImageDraw, ImageFont, ImageOps, ImageChops
-from static_ffmpeg import run
 
 from core.logging import log
 from tools.download_progress import progress_enabled, report
 from tools.soundcloud_beats import estimate_beat_grid, estimate_downbeat_phase, read_beat_grid
 from tools.soundcloud_video_settings import SoundCloudVideoSettings
-from downloaders.base import finalize
+from core.models import NonRetryableError
+from downloaders.base import ffmpeg_executables, finalize
 
 _ARTWORK_URL = re.compile(
     r"https://(?:[a-z0-9-]+\.sndcdn\.com|cdn\.discordapp\.com|media\.discordapp\.net)/",
@@ -557,7 +557,7 @@ def _render_video(
     title_image, title_x = _title_overlay(title, settings.intro_seconds)
 
     log.info("SoundCloud-video [%s]: haetaan FFmpeg ja analysoidaan taajuuskaistat", message_id)
-    ffmpeg, _ = run.get_or_fetch_platform_executables_else_raise()
+    ffmpeg, _ = ffmpeg_executables()
     started = monotonic()
     report("analysis", f"Analysoidaan {settings.bands} taajuuskaistaa…")
     envelopes = _read_envelopes(ffmpeg, audio_path, settings)
@@ -698,6 +698,6 @@ async def make_soundcloud_video(
     except subprocess.CalledProcessError as error:
         details = (error.stderr or b"").decode(errors="replace")
         log.error("SoundCloud-video [%s]: FFmpeg-virhe (%s): %s", message_id, error.returncode, details[-1000:])
-    except (OSError, ValueError, subprocess.TimeoutExpired):
+    except (NonRetryableError, OSError, ValueError, subprocess.TimeoutExpired):
         log.exception("SoundCloud-video [%s]: luonti epäonnistui", message_id)
     return None

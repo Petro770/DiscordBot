@@ -65,6 +65,13 @@ hallintapaneelin päivitystarkistus hyväksyy haaran. Python 3.10–3.13:
 
 Python 3.14: käytä samassa komennossa pakettimääritystä `PySide6>=6.10.1,<6.12`.
 
+FFmpeg alustetaan vasta medialatauksessa. Jos Windows estää
+`static_ffmpeg`-paketin kirjoituksen `Program Files` -hakemistoon, käynnistä
+projekti sen omasta `.venv`-ympäristöstä yllä olevilla skripteillä tai lisää
+samaan hakemistoon asennetut `ffmpeg.exe` ja `ffprobe.exe` bottikoneen
+PATHiin. FFmpeg-virhe keskeyttää kyseisen latauksen ja antaa selkeän
+virheilmoituksen.
+
 ## Asetusten tarkastelu
 
 Pääikkunan ylävalikon **Asetukset…** näyttää käytössä olevat asetukset ja
