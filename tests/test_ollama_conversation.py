@@ -108,3 +108,19 @@ class OllamaConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(_repeats_previous_answer("Moi!", history, "{}"))
         background = {"kanavaviestit": [{"kirjoittaja": "botti", "teksti": old}]}
         self.assertTrue(_repeats_previous_answer(old, [], json.dumps(background)))
+
+    def test_wrapped_duplicate_and_summary_echo(self):
+        from bot.ollama import _repeats_previous_answer
+        from bot.ollama_style import split_style
+
+        body = "Lasipurkin läpi näkisin toimiston, mutta kaipaisin ulos. " * 4
+        body = body.strip()
+        previous = f"Tässä on vastaus:\n\n**Vastaus:**  \n{body}  \n\n****  \n{body}"
+        self.assertEqual(split_style(previous), (body, None))
+        result, _ = split_style(f"Vastaus:  \n{body}\n\n****  \nTyyli: lyhyt sävykuvaus")
+        self.assertEqual(result, body)
+        history = [{"role": "assistant", "content": previous[:350]}]
+        self.assertTrue(_repeats_previous_answer(result, history, "{}"))
+        self.assertFalse(_repeats_previous_answer("Lasin takaa kaipaan taivasta.", history, "{}"))
+        self.assertEqual(split_style("Lasin takaa kaipaan taivasta. [tyyli:runollinen]"),
+                         ("Lasin takaa kaipaan taivasta.", "runollinen"))

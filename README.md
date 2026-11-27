@@ -189,6 +189,9 @@ päättelyvaihetta. Jos vastaus alkaa pitkällä, lähes sellaisenaan
 toistetulla aiemmalla botin vastauksella, botti hylkää sen ja käyttää
 nykyistä mallien varajärjestystä.
 
+Mallin lisäämät vastausotsikot, sellaisenaan toistunut pitkä vastauskappale
+ja irrallinen tyylipohjan esimerkkirivi siivotaan ennen lähetystä ja muistamista.
+
 ### AI-keskustelujen seuranta
 
 Hallintapaneelin **AI-keskustelut…**-ikkunassa näkyvät aktiiviset ja

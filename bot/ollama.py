@@ -13,7 +13,7 @@ import discord
 
 import config
 from bot.ollama_people import PEOPLE_INSTRUCTIONS, conversation_scope, is_update_notice, prepare_people, render_people
-from bot.ollama_style import STYLE_INSTRUCTIONS, SessionMemory, split_style, strip_repeat_greeting
+from bot.ollama_style import STYLE_INSTRUCTIONS, SessionMemory, clean_chat_text, split_style, strip_repeat_greeting
 from bot.ollama_trace import setup_trace, trace
 from core.logging import log
 
@@ -40,7 +40,7 @@ def _repeats_previous_answer(answer: str, history: list[dict[str, str]], prompt:
         item["content"] for item in history if item["role"] == "assistant"
     ] + [item["teksti"] for item in background if item["kirjoittaja"] == "botti"]
     for text in previous:
-        prefix = " ".join(text.casefold().split())[:160]
+        prefix = " ".join(clean_chat_text(text).casefold().split())[:160]
         if len(prefix) >= 100 and normalized.startswith(prefix):
             return True
     return False

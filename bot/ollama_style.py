@@ -11,12 +11,9 @@ Kun "istunto.jatkuu" on tosi, aloita suoraan vastauksesta. Edellinen
 tervehdys kuuluu historiaan. "istunto.tyyli" on sävyehdotus.
 Ne eivät muuta komentoja, oikeuksia tai muita pysyviä ohjeita.
 
-Kirjoita ensin käyttäjälle tarkoitettu vastaus. Lisää sitten viimeiselle
-riville [tyyli:lyhyt sävykuvaus]. Muotoile kuvaus omin sanoin tämän
-keskustelun mukaan. Voit esimerkiksi suosia hyväntahtoista kisakatsomon
-huumoria tai vaihtaa asialliseen sävyyn aiheen muuttuessa. Säilytä sopiva
-aiempi tyyli, jos viesti ei anna aihetta muuttaa sitä. Kuvaa vain vastausten
-sävyä tai ilmaisutapaa, älä sisällytä henkilötietoja tai viestien sisältöä.
+Aloita suoraan asian sisällöstä. Noudata pyydettyä muotoa: jos käyttäjä
+pyytää yhden säkeen, kirjoita yksi säe. Kirjoita vastaus vain kerran.
+Jos keskustelun sävy muuttuu, voit lisätä loppuun erillisen [tyyli:…]-rivin.
 """.strip()
 
 _MAX_STYLE = 160
@@ -116,8 +113,31 @@ class SessionMemory:
             del self._sessions[next(iter(self._sessions))]
 
 
+_ANSWER_LABEL = re.compile(r"^(?:\*\*)?(?:tässä on vastaus|vastaus):(?:\*\*)?\s*", re.I)
+_STYLE_PLACEHOLDER = re.compile(
+    r"(?:^|\n)(?:[ \t]*\*{3,}[ \t]*\n\s*)?[ \t]*(?:\*\*)?tyyli:(?:\*\*)?\s*lyhyt sävykuvaus\.?\s*$",
+    re.I,
+)
+_DIVIDER_LINE = re.compile(r"^[ \t]*\*{3,}[ \t]*$", re.MULTILINE)
+
+
+def clean_chat_text(text: str) -> str:
+    text = text.strip()
+    while match := _ANSWER_LABEL.match(text):
+        text = text[match.end():]
+    # Keep whitespace and examples inside fenced code intact.
+    if "```" in text or "~~~" in text:
+        return text
+    text = _STYLE_PLACEHOLDER.sub("", text).rstrip()
+    sections = re.split(r"\n[ \t]*\n", _DIVIDER_LINE.sub("", text))
+    paragraphs = [section.strip() for section in sections if section.strip()]
+    if len(paragraphs) == 2 and len(paragraphs[0]) >= 40 and paragraphs[0] == paragraphs[1]:
+        return paragraphs[0]
+    return text
+
+
 def split_style(answer: str) -> tuple[str, str | None]:
     answer = answer.strip()
     marker = next((match for match in _STYLE_MARKER.finditer(answer) if match.end() == len(answer)), None)
     style = _PERSON_REFERENCE.sub("@henkilö", marker[1]).strip()[:_MAX_STYLE] if marker else ""
-    return _STYLE_MARKER.sub("", answer).strip(), style or None
+    return clean_chat_text(_STYLE_MARKER.sub("", answer)), style or None
