@@ -339,7 +339,9 @@ class BotManagerApp(QMainWindow):
         restart.setArguments(arguments)
         restart.setWorkingDirectory(str(PROJECT_DIR))
         restart.setProcessEnvironment(environment)
-        started, _ = restart.startDetached()
+        # PySide6's instance overload can return a bool without a child PID.
+        result = restart.startDetached()
+        started = result[0] if isinstance(result, tuple) else result
         if not started:
             raise UpdateError("Päivitys tehtiin, mutta hallintapaneelin uudelleenkäynnistys epäonnistui. Avaa se uudelleen.")
         self.quit_application()
