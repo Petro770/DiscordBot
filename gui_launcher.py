@@ -127,6 +127,7 @@ class BotManagerApp(QMainWindow):
 
     def __init__(self):
         super().__init__()
+        self._quitting = False
         self.setWindowTitle("Bot-Hallintapaneeli")
         self.setGeometry(100, 100, 500, 350)
         self._git_update = GitUpdate(PROJECT_DIR)
@@ -531,6 +532,9 @@ class BotManagerApp(QMainWindow):
                 self.raise_()
 
     def closeEvent(self, event):
+        if self._quitting:
+            event.accept()
+            return
         event.ignore()
         self.hide()
         self.tray_icon.showMessage(
@@ -541,6 +545,9 @@ class BotManagerApp(QMainWindow):
         )
 
     def quit_application(self):
+        if self._quitting:
+            return
+        self._quitting = True
         if self._version_check.state() != QProcess.ProcessState.NotRunning:
             self._version_check.blockSignals(True)
             self._version_check.kill()
@@ -553,7 +560,8 @@ class BotManagerApp(QMainWindow):
         self._append_log("Sovellus lopetetaan.")
         self.stop_bot_service()
         self.tray_icon.hide()
-        QApplication.quit()
+        self.close()
+        QApplication.exit(0)
 
 def main():
     # GUI-versio: EI konsolilokia. Loki kirjoitetaan vain tiedostoon ja GUI:hin.

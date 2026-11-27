@@ -65,6 +65,10 @@ hallintapaneelin päivitystarkistus hyväksyy haaran. Python 3.10–3.13:
 
 Python 3.14: käytä samassa komennossa pakettimääritystä `PySide6>=6.10.1,<6.12`.
 
+Päivityksen jälkeen vanha hallintapaneeli suljetaan ja uusi avataan.
+Ikkunan rastista sulkeminen piilottaa paneelin ilmoitusalueelle. Valitse
+ilmoitusalueen valikosta **Poistu**, kun haluat lopettaa sovelluksen.
+
 ## Asetusten tarkastelu
 
 Pääikkunan ylävalikon **Asetukset…** näyttää käytössä olevat asetukset ja
