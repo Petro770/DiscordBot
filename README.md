@@ -72,6 +72,10 @@ samaan hakemistoon asennetut `ffmpeg.exe` ja `ffprobe.exe` bottikoneen
 PATHiin. FFmpeg-virhe keskeyttää kyseisen latauksen ja antaa selkeän
 virheilmoituksen.
 
+Päivityksen jälkeen vanha hallintapaneeli suljetaan ja uusi avataan.
+Ikkunan rastista sulkeminen piilottaa paneelin ilmoitusalueelle. Valitse
+ilmoitusalueen valikosta **Poistu**, kun haluat lopettaa sovelluksen.
+
 ## Asetusten tarkastelu
 
 Pääikkunan ylävalikon **Asetukset…** näyttää käytössä olevat asetukset ja
