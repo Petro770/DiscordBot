@@ -2,6 +2,7 @@
 import json
 import re
 from dataclasses import dataclass
+from time import monotonic
 
 
 STYLE_INSTRUCTIONS = """
@@ -43,11 +44,28 @@ class Session:
     exchanges: tuple[tuple[str, str], ...] = ()
     text_target: tuple[str, str] | None = None
     message_ids: tuple[tuple[int, int], ...] = ()
+    last_author_id: int | None = None
+    updated: float = 0.0
 
 
 class SessionMemory:
     def __init__(self):
         self._sessions: dict[tuple[int, int | None], Session] = {}
+
+    def resolve_scope(self, scope: tuple[int, int | None], author_id: int, standalone: bool):
+        channel, root = scope
+        if root is None:
+            return scope
+        for key, session in reversed(self._sessions.items()):
+            if key[0] != channel:
+                continue
+            if standalone:
+                if session.last_author_id == author_id and monotonic() - session.updated < 600:
+                    return key
+                break
+            if key == scope or any(root in pair for pair in session.message_ids):
+                return key
+        return scope
 
     def style(self, scope: tuple[int, int | None]) -> str:
         session = self._sessions.get(scope)
@@ -55,7 +73,10 @@ class SessionMemory:
 
     def text_target(self, scope: tuple[int, int | None]) -> tuple[str, str] | None:
         session = self._sessions.get(scope)
-        return session.text_target if session else None
+        if session and session.text_target:
+            return session.text_target
+        return next((prior.text_target for key, prior in reversed(self._sessions.items())
+                     if key[0] == scope[0] and prior.text_target), None)
 
     def add_context(self, scope: tuple[int, int | None], payload: str) -> str:
         session = self._sessions.get(scope)
@@ -86,7 +107,7 @@ class SessionMemory:
     def remember(
         self, scope: tuple[int, int | None], payload: str, answer: str, style: str | None,
         text_target: tuple[str, str] | None = None,
-        message_ids: tuple[int, int] = (0, 0),
+        message_ids: tuple[int, int] = (0, 0), author_id: int | None = None,
     ):
         session = self._sessions.pop(scope, Session())
         # Resolve request-local references before saving the turn.
@@ -108,6 +129,7 @@ class SessionMemory:
             (*session.exchanges, exchange)[-_MAX_EXCHANGES:],
             text_target or session.text_target,
             (*session.message_ids, message_ids)[-_MAX_EXCHANGES:],
+            author_id, monotonic(),
         )
         if len(self._sessions) > _MAX_SESSIONS:
             del self._sessions[next(iter(self._sessions))]

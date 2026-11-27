@@ -47,6 +47,19 @@ _FALLBACK_OPENINGS = (
 )
 
 
+_CONTEXT_KEYS = re.compile(r"""["'](nimi|viite|roolit|viesti|henkilöt|istunto|aiemmat_vuorot|kanavaviestit)["']\s*:""")
+
+
+def echoes_internal_context(answer: str) -> bool:
+    keys = set(_CONTEXT_KEYS.findall(answer))
+    return (
+        {"viite", "roolit"} <= keys
+        or ({"nimi", "roolit"} <= keys and bool(_PERSON_REFERENCE.search(answer) or _USER_MENTION.search(answer)))
+        or {"viesti", "henkilöt"} <= keys
+        or bool({"aiemmat_vuorot", "kanavaviestit"} & keys)
+    )
+
+
 def is_update_notice(text: str) -> bool:
     return text.lstrip().startswith(_UPDATE_NOTICE)
 
@@ -60,6 +73,7 @@ def _is_conversation_message(message: discord.Message, bot_user_id: int) -> bool
     return (
         message.author.id == bot_user_id
         and not is_update_notice(text)
+        and not echoes_internal_context(text)
         and not text.startswith(_FALLBACK_OPENINGS)
     )
 

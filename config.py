@@ -115,19 +115,16 @@ OLLAMA_HOSTS = tuple(
     ).split(",")
     if host.strip()
 )
-_ollama_model_entries = tuple(
-    model.strip() for model in os.getenv("OLLAMA_MODELS", "").split(",") if model.strip()
-)
-OLLAMA_MODELS = tuple(model for model in _ollama_model_entries if not model.startswith("!"))
-OLLAMA_EXCLUDED_MODELS = frozenset(
-    model[1:].strip() for model in _ollama_model_entries if model.startswith("!")
-)
-OLLAMA_CHAT_PRIORITY = tuple(dict.fromkeys(
-    model.strip() for model in os.getenv("OLLAMA_CHAT_PRIORITY", "").split(",") if model.strip()
-))
-OLLAMA_VISION_PRIORITY = tuple(dict.fromkeys(
-    model.strip() for model in os.getenv("OLLAMA_VISION_PRIORITY", "").split(",") if model.strip()
-))
+def _ollama_model_list(key: str) -> tuple[tuple[str, ...], frozenset[str]]:
+    entries = [item.strip() for item in os.getenv(key, "").split(",")]
+    models = tuple(dict.fromkeys(item for item in entries if item and not item.startswith("!")))
+    excluded = frozenset(item[1:].strip() for item in entries if item.startswith("!") and item[1:].strip())
+    return models, excluded
+
+
+OLLAMA_MODELS, OLLAMA_EXCLUDED_MODELS = _ollama_model_list("OLLAMA_MODELS")
+OLLAMA_CHAT_PRIORITY, OLLAMA_CHAT_EXCLUDED = _ollama_model_list("OLLAMA_CHAT_PRIORITY")
+OLLAMA_VISION_PRIORITY, OLLAMA_VISION_EXCLUDED = _ollama_model_list("OLLAMA_VISION_PRIORITY")
 _ollama_channel_ids = os.getenv("OLLAMA_CHANNEL_IDS")
 OLLAMA_CHANNEL_SOURCE = "TARGET_CHANNEL_ID" if _ollama_channel_ids is None else "OLLAMA_CHANNEL_IDS"
 OLLAMA_CHANNEL_IDS = frozenset(

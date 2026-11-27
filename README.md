@@ -163,8 +163,10 @@ kahdeksalta`.
 Vapaat Ollama-palvelimet käsittelevät kysymyksiä rinnakkain, enintään yksi
 kysymys palvelinta kohti. Saman Discord-ketjun, yksityisviestikeskustelun tai vastausketjun
 vuorot käsitellään peräkkäin. Jatka tavallisella palvelinkanavalla
-keskustelua vastaamalla ketjun viestiin ja mainitsemalla botti. Uusi
-itsenäinen maininta aloittaa oman keskustelun. Botti voi pitää
+keskustelua vastaamalla ketjun viestiin ja mainitsemalla botti. Itsenäinen maininta jatkaa kanavan viimeisintä AI-keskustelua, jos
+sen edellinen onnistunut vuoro oli samalta kirjoittajalta alle kymmenen minuuttia sitten.
+Muut itsenäiset maininnat aloittavat uuden keskustelun. Erillinen Discord-vastaus
+seuraa aina kohdeviestinsä ketjua. Botti voi pitää
 käsittelypaikkojen lisäksi enintään 20 viestiä jonossa tai odottamassa omaa
 vastausvuoroaan. Täyden jonon merkkinä botti reagoi uuteen viestiin 🚫.
 Kokonaisaika alkaa viestin päästessä käsittelyyn. Botin koneen pitää päästä
@@ -176,6 +178,7 @@ Jos Ollama kuuntelee vain paikallisia yhteyksiä, määritä palvelimella
 
 Botti hakee oletuksena enintään 12 taustaviestiä Discord-ketjusta,
 yksityisviestikeskustelusta tai tavallisen kanavan viestin vastausketjusta.
+Itsenäinen kanavamaininta saa taustaa saman kanavan edeltävistä viesteistä.
 Muistissa olevat AI-vuorot välitetään mallille käyttäjän ja avustajan
 viesteinä. Muisti säilyttää näyttönimet ja poistaa samojen vuorojen
 kaksoiskappaleet Discord-taustasta. Botin päivitysilmoitukset ja Ollaman
@@ -239,13 +242,15 @@ Keskustelumuistiin voi jäädä katkelma botin tekstivastauksesta.
 
 `OLLAMA_CHAT_PRIORITY` ja `OLLAMA_VISION_PRIORITY` ovat erilliset, pilkulla
 erotetut listat tarkoista mallinimistä. Botti kokeilee käynnissä olevan
-tekstikeskustelun palvelin–malliparia ensin. Sen jälkeen se kokeilee
+tekstikeskustelun palvelin–malliparia ensin. Uuden keskustelun ensimmäinen
+valinta on saman kanavan viimeksi onnistunut tekstimalli samalla palvelimella. Sen jälkeen se kokeilee
 prioriteettilistan ensimmäistä mallia sallituilla palvelimilla ennen
 listan seuraavaa mallia. Jos lista on tyhjä tai yksikään sen malleista
 ei vastaa, tavallinen mallihaku jatkuu jäljellä olevan aikarajan puitteissa.
 
 `OLLAMA_MODELS`-kokeilulista, `!malli`-poissulut ja kuvatukirajaus pätevät
-myös prioriteettilistoihin. Asetusten muutokset tulevat voimaan botin
+myös prioriteettilistoihin. Prioriteettilistan oma `!malli` sulkee mallin pois
+kyseisen pyyntötyypin kaikista yrityksistä, myös automaattihausta. Asetusten muutokset tulevat voimaan botin
 uudelleenkäynnistyksessä.
 
 ### Ollaman aikarajat

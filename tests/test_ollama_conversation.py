@@ -124,3 +124,64 @@ class OllamaConversationTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(_repeats_previous_answer("Lasin takaa kaipaan taivasta.", history, "{}"))
         self.assertEqual(split_style("Lasin takaa kaipaan taivasta. [tyyli:runollinen]"),
                          ("Lasin takaa kaipaan taivasta.", "runollinen"))
+
+    async def test_internal_people_json_is_blocked_before_and_after_rendering(self):
+        from bot.ollama_people import echoes_internal_context, _is_conversation_message
+        raw = '```json\n{"henkelö":"[henkilo_1]","nimi":"Testi","roolit":["kirjoittaja"]}\n```'
+        self.assertTrue(echoes_internal_context(raw))
+        prior = self.message(110)
+        prior.author = SimpleNamespace(id=2, bot=True)
+        prior.content = raw.replace("[henkilo_1]", "<@123>")
+        self.assertFalse(_is_conversation_message(prior, 2))
+        self.assertFalse(echoes_internal_context('{"musiikki": "tekno"}'))
+
+    def test_standalone_continuation_and_model_reuse_have_separate_scopes(self):
+        m = SessionMemory()
+        root = (10, 100)
+        target = ("http://test", "gemma3:1b")
+        payload = '{"viesti":"hei","henkilöt":[]}'
+        with patch("bot.ollama_style.monotonic", return_value=1000):
+            m.remember(root, payload, "moi", None, target, (101, 102), 8)
+            self.assertEqual(m.resolve_scope((10, 103), 8, True), root)
+            self.assertEqual(m.resolve_scope((10, 103), 9, True), (10, 103))
+            self.assertEqual(m.resolve_scope((10, 101), 9, False), root)
+        with patch("bot.ollama_style.monotonic", return_value=1800):
+            self.assertEqual(m.resolve_scope((10, 103), 8, True), (10, 103))
+        self.assertEqual(m.text_target((10, 103)), target)
+        self.assertFalse(m.chat_history((10, 103)))
+        self.assertIsNone(m.text_target((11, 100)))
+
+    def test_exclusions_in_priority_list(self):
+        import os
+        import config
+        with patch.dict(os.environ, {"OLLAMA_CHAT_PRIORITY": "!qwen3:1.7b,!qwen3:8b,gemma3:1b"}):
+            models, excluded = config._ollama_model_list("OLLAMA_CHAT_PRIORITY")
+        self.assertEqual(models, ("gemma3:1b",))
+        self.assertEqual(excluded, {"qwen3:1.7b", "qwen3:8b"})
+
+    async def test_channel_mentions_fetch_background_and_reuse_successful_route(self):
+        from unittest.mock import AsyncMock, MagicMock
+        from bot.ollama import OllamaReplies
+
+        async def history(*, limit, before):
+            yield self.message(99)
+
+        target = ("http://host", "gemma3:1b")
+        generate = AsyncMock(return_value=("Hyvin istuu.", target))
+        with patch("config.OLLAMA_CHANNEL_IDS", {10}), patch("config.OLLAMA_RECENT_MESSAGES", 12), patch(
+            "bot.ollama._generate", generate
+        ):
+            replies = OllamaReplies()
+            for number in (100, 102):
+                message = self.message(number)
+                message.content = "<@2> Kerro lisää."
+                message.attachments = []
+                message.channel.history = history
+                message.channel.typing = MagicMock()
+                message.reply = AsyncMock(return_value=self.message(number + 1))
+                await replies.handle(message, 2)
+        first, second = generate.await_args_list
+        self.assertEqual(json.loads(first.args[0])["kanavaviestit"][0]["teksti"], "Viesti 99")
+        self.assertIsNone(first.kwargs["preferred"])
+        self.assertEqual(second.kwargs["preferred"], target)
+        self.assertEqual(second.kwargs["history"][-1], {"role": "assistant", "content": "Hyvin istuu."})

@@ -12,7 +12,7 @@ import aiohttp
 import discord
 
 import config
-from bot.ollama_people import PEOPLE_INSTRUCTIONS, conversation_scope, is_update_notice, prepare_people, render_people
+from bot.ollama_people import PEOPLE_INSTRUCTIONS, conversation_scope, echoes_internal_context, is_update_notice, prepare_people, render_people
 from bot.ollama_style import STYLE_INSTRUCTIONS, SessionMemory, clean_chat_text, split_style, strip_repeat_greeting
 from bot.ollama_trace import setup_trace, trace
 from core.logging import log
@@ -21,16 +21,6 @@ from core.logging import log
 _IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
 _MAX_IMAGE_BYTES = 8 * 1024 * 1024
-_CONTEXT_KEYS = re.compile(r"""["'](viite|roolit|viesti|henkilöt|istunto|aiemmat_vuorot|kanavaviestit)["']\s*:""")
-
-
-def _echoes_internal_context(answer: str) -> bool:
-    keys = set(_CONTEXT_KEYS.findall(answer))
-    return (
-        {"viite", "roolit"} <= keys
-        or {"viesti", "henkilöt"} <= keys
-        or bool({"aiemmat_vuorot", "kanavaviestit"} & keys)
-    )
 
 
 def _repeats_previous_answer(answer: str, history: list[dict[str, str]], prompt: str) -> bool:
@@ -159,7 +149,7 @@ async def _generate_on_host(
     session: aiohttp.ClientSession, discovery_timeout: aiohttp.ClientTimeout,
     hosts: OllamaHosts, host: str, prompt: str, system_prompt: str, image: str | None,
     message_id: Optional[int], models_override: tuple[str, ...] | None,
-    history: list[dict[str, str]], visited: set[str],
+    history: list[dict[str, str]], visited: set[str], excluded: frozenset[str],
 ) -> tuple[str | None, str | None, int]:
     models = models_override or config.OLLAMA_MODELS
     if not models:
@@ -190,7 +180,7 @@ async def _generate_on_host(
 
     candidates = tuple(
         model for model in dict.fromkeys(models)
-        if model not in config.OLLAMA_EXCLUDED_MODELS and model not in visited and not _is_cloud_model(model)
+        if model not in excluded and model not in visited and not _is_cloud_model(model)
     )
     log.info("Ollama %s: kokeiltavat mallit=%s (ehdokkaita ennen poissulkuja=%s)",
              host, candidates, len(models))
@@ -255,7 +245,7 @@ async def _generate_on_host(
             if is_update_notice(split_style(answer)[0]):
                 trace("model_response_rejected", message_id, host=host, model=model, reason="update_notice")
                 continue
-            if _echoes_internal_context(answer):
+            if echoes_internal_context(answer):
                 log.warning(
                     "Ollama %s / %s: sisäisen kontekstin toistanut vastaus hylättiin | viesti=%s",
                     host, model, message_id,
@@ -313,6 +303,7 @@ async def _generate(
         log.warning("Ollama: yhtään palvelinta ei ole määritetty | viesti=%s", message_id)
 
     priority = config.OLLAMA_VISION_PRIORITY if image is not None else config.OLLAMA_CHAT_PRIORITY
+    excluded = config.OLLAMA_EXCLUDED_MODELS | (config.OLLAMA_CHAT_EXCLUDED if image is None else config.OLLAMA_VISION_EXCLUDED)
     phases: list[tuple[tuple[str, ...], tuple[str, ...] | None]] = []
     if preferred and preferred[0] in hosts.hosts:
         phases.append(((preferred[0],), (preferred[1],)))
@@ -323,7 +314,7 @@ async def _generate(
     async with aiohttp.ClientSession(timeout=timeout, raise_for_status=True) as session:
         for phase_hosts, models in phases:
             if models and (
-                models[0] in config.OLLAMA_EXCLUDED_MODELS
+                models[0] in excluded
                 or _is_cloud_model(models[0])
                 or (config.OLLAMA_MODELS and models[0] not in config.OLLAMA_MODELS)
             ):
@@ -336,7 +327,7 @@ async def _generate(
                     trace("host_selected", message_id, host=host)
                     answer, model, host_attempts = await _generate_on_host(
                         session, discovery_timeout, hosts, host, prompt, system_prompt, image,
-                        message_id, models, history or [], visited[host],
+                        message_id, models, history or [], visited[host], excluded,
                     )
                     attempts += host_attempts
                     if answer and model:
@@ -414,6 +405,8 @@ class OllamaReplies:
             trace("queue_full", message.id, channel_id=channel_id)
             return
 
+        standalone = scope[1] == message.id and message.reference is None
+        scope = self._memory.resolve_scope(scope, message.author.id, standalone)
         previous = self._reply_tails.get(scope)
         turn = asyncio.get_running_loop().create_future()
         self._reply_tails[scope] = turn
@@ -442,13 +435,16 @@ class OllamaReplies:
             elif prompt:
                 trace("waiting_worker", message.id)
                 async with self._workers:
-                    answer, style, payload, text_target, memory_answer = await self._answer(message, prompt, bot_user_id, image, scope, ancestors)
+                    chain = None if standalone or scope[1] is None else ancestors
+                    answer, style, payload, text_target, memory_answer = await self._answer(
+                        message, prompt, bot_user_id, image, scope, chain,
+                    )
             else:
                 log.info("Ollama: maininnassa ei ollut kysymystä tai sopivaa kuvaa | viesti=%s", message.id)
                 answer = "Kirjoita kysymys samaan viestiin maininnan kanssa."
             sent = await self._reply(message, answer)
             if sent and payload is not None:
-                self._memory.remember(scope, payload, memory_answer, style, text_target, (message.id, sent.id))
+                self._memory.remember(scope, payload, memory_answer, style, text_target, (message.id, sent.id), message.author.id)
                 if style:
                     log.info("Ollama: istunnon tyyli päivitetty | kanava=%s", channel_id)
             trace("finished", message.id, outcome=(
@@ -470,7 +466,7 @@ class OllamaReplies:
     async def _answer(
         self, message: discord.Message, prompt: str, bot_user_id: int,
         image: discord.Attachment | None, scope: tuple[int, int | None],
-        ancestors: list[discord.Message],
+        ancestors: list[discord.Message] | None,
     ) -> tuple[str, str | None, str | None, tuple[str, str] | None, str]:
         log.info("Ollama: käsittely alkaa | viesti=%s", message.id)
         trace("preparing", message.id, has_image=image is not None)
@@ -495,7 +491,7 @@ class OllamaReplies:
                 log.info("Ollama: kuva ladattu | viesti=%s | tavua=%s", message.id, len(raw))
 
             payload, mentions, recent_count, people_count = await prepare_people(
-                message, prompt, bot_user_id, ancestors if scope[1] is not None else None,
+                message, prompt, bot_user_id, ancestors,
                 self._memory.message_ids(scope),
             )
             context = self._memory.add_context(scope, payload)
@@ -503,7 +499,8 @@ class OllamaReplies:
             preferred = self._memory.text_target(scope)
             trace("model_input", message.id, system=self._system_prompt, user=context,
                   has_image=image_data is not None, history=history, history_turns=len(history) // 2,
-                  conversation_scope=("reply_chain" if scope[1] is not None
+                  conversation_scope=("channel_mention" if scope[1] is not None and ancestors is None
+                                      else "reply_chain" if scope[1] is not None
                                       else "dm" if message.guild is None else "thread"),
                   continuation=bool(history),
                   model_timeout_seconds=config.OLLAMA_MODEL_TIMEOUT_SECONDS,
