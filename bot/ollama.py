@@ -12,8 +12,8 @@ import aiohttp
 import discord
 
 import config
-from bot.ollama_people import PEOPLE_INSTRUCTIONS, prepare_people, render_people
-from bot.ollama_style import STYLE_INSTRUCTIONS, SessionMemory, split_style
+from bot.ollama_people import PEOPLE_INSTRUCTIONS, conversation_scope, prepare_people, render_people
+from bot.ollama_style import STYLE_INSTRUCTIONS, SessionMemory, split_style, strip_repeat_greeting
 from bot.ollama_trace import setup_trace, trace
 from core.logging import log
 
@@ -231,7 +231,8 @@ async def _generate_on_host(
                       reason="invalid_response")
                 continue
             trace("model_response", message_id, host=host, model=model, content=raw_answer,
-                  done_reason=data.get("done_reason"), elapsed_seconds=round(monotonic() - started, 3))
+                  done_reason=data.get("done_reason"), elapsed_seconds=round(monotonic() - started, 3),
+                  **_response_metrics(data))
             answer = raw_answer.strip()
             if _echoes_internal_context(answer):
                 log.warning(
@@ -258,6 +259,19 @@ async def _generate_on_host(
 
 
     return None, None, attempts
+
+
+def _response_metrics(data: dict) -> dict[str, int | float]:
+    metrics = {}
+    for field in ("total_duration", "load_duration", "prompt_eval_duration", "eval_duration"):
+        value = data.get(field)
+        if type(value) is int and value >= 0:
+            metrics[f"{field}_seconds"] = round(value / 1_000_000_000, 6)
+    for field in ("prompt_eval_count", "prompt_eval_cached_count", "eval_count"):
+        value = data.get(field)
+        if type(value) is int and value >= 0:
+            metrics[field] = value
+    return metrics
 
 
 async def _generate(
@@ -327,12 +341,12 @@ class OllamaReplies:
         self._hosts = OllamaHosts(config.OLLAMA_HOSTS)
         self._workers = asyncio.Semaphore(max(1, len(self._hosts.hosts)))
         self._pending = 0
-        self._reply_tails: dict[int, asyncio.Future] = {}
+        self._reply_tails: dict[tuple[int, int | None], asyncio.Future] = {}
         self._memory = SessionMemory()
         self._system_prompt = "\n\n".join((_system_prompt(), PEOPLE_INSTRUCTIONS, STYLE_INSTRUCTIONS))
 
     def session_style(self, channel_id: Optional[int]) -> str:
-        return self._memory.style(channel_id) if channel_id is not None else ""
+        return self._memory.style((channel_id, None)) if channel_id is not None else ""
 
     async def handle(self, message: discord.Message, bot_user_id: int):
         if message.author.bot:
@@ -350,7 +364,7 @@ class OllamaReplies:
             )
             return
         log.info("Ollama: maininta hyväksytty | viesti=%s | kanava=%s", message.id, channel_id)
-        trace("discord_input", message.id, channel_id=channel_id,
+        trace("discord_input", message.id, channel_id=channel_id, bot_version=config.BOT_VERSION,
               channel_name=getattr(message.channel, "name", None) if message.guild else None,
               private=not bool(message.guild), content=message.content,
               attachment_count=len(message.attachments))
@@ -365,6 +379,7 @@ class OllamaReplies:
         if image is not None and not prompt:
             prompt = "Kuvaile lyhyesti, mitä kuvassa näkyy."
 
+        scope, ancestors = await conversation_scope(message)
         if self._pending >= 20 + len(self._hosts.hosts):
             log.warning("Ollama: jono täynnä | viesti=%s | kanava=%s", message.id, channel_id)
             try:
@@ -374,17 +389,17 @@ class OllamaReplies:
             trace("queue_full", message.id, channel_id=channel_id)
             return
 
-        previous = self._reply_tails.get(channel_id)
+        previous = self._reply_tails.get(scope)
         turn = asyncio.get_running_loop().create_future()
-        self._reply_tails[channel_id] = turn
+        self._reply_tails[scope] = turn
         self._pending += 1
         log.info("Ollama: viesti jonossa | viesti=%s | kesken=%s", message.id, self._pending)
 
         def finish_turn(_previous=None):
             if not turn.done():
                 turn.set_result(None)
-            if self._reply_tails.get(channel_id) is turn:
-                del self._reply_tails[channel_id]
+            if self._reply_tails.get(scope) is turn:
+                del self._reply_tails[scope]
 
         try:
             # Read context after the preceding turn has been sent and recorded.
@@ -402,13 +417,13 @@ class OllamaReplies:
             elif prompt:
                 trace("waiting_worker", message.id)
                 async with self._workers:
-                    answer, style, payload, text_target = await self._answer(message, prompt, bot_user_id, image)
+                    answer, style, payload, text_target, memory_answer = await self._answer(message, prompt, bot_user_id, image, scope, ancestors)
             else:
                 log.info("Ollama: maininnassa ei ollut kysymystä tai sopivaa kuvaa | viesti=%s", message.id)
                 answer = "Kirjoita kysymys samaan viestiin maininnan kanssa."
             sent = await self._reply(message, answer)
             if sent and payload is not None:
-                self._memory.remember(channel_id, payload, answer, style, text_target)
+                self._memory.remember(scope, payload, memory_answer, style, text_target, (message.id, sent.id))
                 if style:
                     log.info("Ollama: istunnon tyyli päivitetty | kanava=%s", channel_id)
             trace("finished", message.id, outcome=(
@@ -429,8 +444,9 @@ class OllamaReplies:
 
     async def _answer(
         self, message: discord.Message, prompt: str, bot_user_id: int,
-        image: discord.Attachment | None,
-    ) -> tuple[str, str | None, str | None, tuple[str, str] | None]:
+        image: discord.Attachment | None, scope: tuple[int, int | None],
+        ancestors: list[discord.Message],
+    ) -> tuple[str, str | None, str | None, tuple[str, str] | None, str]:
         log.info("Ollama: käsittely alkaa | viesti=%s", message.id)
         trace("preparing", message.id, has_image=image is not None)
         async with AsyncExitStack() as typing:
@@ -445,22 +461,30 @@ class OllamaReplies:
                 except (discord.HTTPException, asyncio.TimeoutError) as exc:
                     log.warning("Ollama: kuvaa ei saatu ladattua | viesti=%s | %s", message.id, type(exc).__name__)
                     trace("image_error", message.id, error=type(exc).__name__)
-                    return "Kuvaa ei saatu ladattua Discordista.", None, None, None
+                    return "Kuvaa ei saatu ladattua Discordista.", None, None, None, ""
                 if not raw or len(raw) > _MAX_IMAGE_BYTES:
                     log.warning("Ollama: kuvan data hylätty | viesti=%s | tavua=%s", message.id, len(raw))
                     trace("image_error", message.id, reason="Tyhjä tai liian suuri kuva")
-                    return "Kuvan pitää olla enintään 8 Mt ja sisältää kuvadataa.", None, None, None
+                    return "Kuvan pitää olla enintään 8 Mt ja sisältää kuvadataa.", None, None, None, ""
                 image_data = b64encode(raw).decode("ascii")
                 log.info("Ollama: kuva ladattu | viesti=%s | tavua=%s", message.id, len(raw))
 
-            payload, mentions, recent_count, people_count = await prepare_people(message, prompt, bot_user_id)
-            context = self._memory.add_context(message.channel.id, payload)
-            history = self._memory.chat_history(message.channel.id)
-            preferred = self._memory.text_target(message.channel.id)
+            payload, mentions, recent_count, people_count = await prepare_people(
+                message, prompt, bot_user_id, ancestors if scope[1] is not None else None,
+                self._memory.message_ids(scope),
+            )
+            context = self._memory.add_context(scope, payload)
+            history = self._memory.chat_history(scope)
+            preferred = self._memory.text_target(scope)
             trace("model_input", message.id, system=self._system_prompt, user=context,
                   has_image=image_data is not None, history=history, history_turns=len(history) // 2,
+                  conversation_scope=("reply_chain" if scope[1] is not None
+                                      else "dm" if message.guild is None else "thread"),
+                  continuation=bool(history),
+                  model_timeout_seconds=config.OLLAMA_MODEL_TIMEOUT_SECONDS,
+                  total_timeout_seconds=config.OLLAMA_TOTAL_TIMEOUT_SECONDS,
                   recent_messages=recent_count, people_count=people_count,
-                  session_style=self.session_style(message.channel.id), text_target=preferred)
+                  session_style=self._memory.style(scope), text_target=preferred)
             try:
                 result = await asyncio.wait_for(
                     _generate(context, self._system_prompt, self._hosts, image_data,
@@ -479,14 +503,16 @@ class OllamaReplies:
         if not answer:
             log.warning("Ollama: viesti %s jäi ilman mallin vastausta", message.id)
             if image is not None:
-                return "Ollama ei saanut tulkittua kuvaa. Tarkista lokista, löytyikö kuvaa tukeva malli.", None, None, None
-            return "Ollama ei saanut muodostettua vastausta. Palvelin voi olla poissa käytöstä tai sopiva paikallinen malli voi puuttua.", None, None, None
-        rendered = render_people(answer, mentions)
+                return "Ollama ei saanut tulkittua kuvaa. Tarkista lokista, löytyikö kuvaa tukeva malli.", None, None, None, ""
+            return "Ollama ei saanut muodostettua vastausta. Palvelin voi olla poissa käytöstä tai sopiva paikallinen malli voi puuttua.", None, None, None, ""
+        cleaned = strip_repeat_greeting(answer) if history else answer
+        rendered = render_people(cleaned, mentions)
         trace("parsed_response", message.id, content=rendered, style=style,
+              opening_greeting_removed=cleaned != answer,
               text_target=target if image is None else None)
-        return rendered, style, payload, target if image is None else None
+        return rendered, style, payload, target if image is None else None, cleaned
 
-    async def _reply(self, message: discord.Message, answer: str) -> bool:
+    async def _reply(self, message: discord.Message, answer: str) -> discord.Message | None:
         channel_id = message.channel.id
         encoded = answer.encode("utf-16-le")
         if len(encoded) > 4000:
@@ -502,7 +528,7 @@ class OllamaReplies:
             )
             trace("discord_send_error", message.id, channel_id=channel_id,
                   status=exc.status, code=exc.code, content=answer)
-            return False
+            return None
         trace("discord_output", message.id, channel_id=channel_id, reply_id=sent.id, content=answer)
         log.info("Ollama: vastaus lähetetty | viesti=%s | kanava=%s", message.id, channel_id)
-        return True
+        return sent

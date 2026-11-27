@@ -5,7 +5,7 @@ from datetime import datetime
 
 from PySide6.QtCore import QObject, QSignalBlocker, Qt, Signal, Slot
 from PySide6.QtWidgets import (
-    QApplication, QDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+    QApplication, QDialog, QHBoxLayout, QLabel, QListWidget, QListWidgetItem, QMessageBox,
     QPlainTextEdit, QPushButton, QSplitter, QTabWidget, QVBoxLayout, QWidget,
 )
 
@@ -81,6 +81,8 @@ class AiMonitor(QDialog):
         self._context.setWordWrap(True)
         self._copy = QPushButton("Kopioi vianetsintätiedot")
         self._copy.clicked.connect(self._copy_diagnostics)
+        self._copy_text = QPushButton("Kopioi vianetsintätiedot ja viestitekstit…")
+        self._copy_text.clicked.connect(self._copy_with_text)
         self._channels.currentItemChanged.connect(self._refresh_turns)
         self._turns.currentItemChanged.connect(self._refresh_details)
 
@@ -98,6 +100,7 @@ class AiMonitor(QDialog):
         tabs.addTab(self._details, "Tekstijäljitys")
         right.addWidget(tabs, 1)
         right.addWidget(self._copy)
+        right.addWidget(self._copy_text)
         splitter = QSplitter()
         splitter.addWidget(lists)
         splitter.addWidget(detail)
@@ -175,6 +178,7 @@ class AiMonitor(QDialog):
     def _refresh_details(self):
         events = self._events()
         self._copy.setEnabled(bool(events))
+        self._copy_text.setEnabled(any(TEXT_FIELDS.intersection(event) - {"system"} for event in events))
         model_input = next((event for event in events if event["event"] == "model_input"), {})
         parsed = next((event for event in events if event["event"] == "parsed_response"), {})
         delivered = bool(events and events[-1].get("outcome") == "success")
@@ -204,7 +208,18 @@ class AiMonitor(QDialog):
         self._timeline.setPlainText("\n".join(lines))
         self._details.setPlainText("\n\n".join(details) or "Tekstijäljitys vaatii OLLAMA_TRACE_ENABLED=true.")
 
-    def _copy_diagnostics(self):
-        rows = [{key: value for key, value in event.items() if key not in _PRIVATE_FIELDS}
+    def _copy_with_text(self):
+        answer = QMessageBox.question(
+            self, "Kopioi viestitekstit",
+            "Kopio voi sisältää yksityisviestejä, nimiä ja mainintoja. Tarkista tiedot ennen jakamista.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self._copy_diagnostics(include_text=True)
+
+    def _copy_diagnostics(self, include_text=False):
+        excluded = _PRIVATE_FIELDS - {"content", "user", "history"} if include_text else _PRIVATE_FIELDS
+        rows = [{key: value for key, value in event.items() if key not in excluded}
                 for event in self._events()]
         QApplication.clipboard().setText("\n".join(json.dumps(row, ensure_ascii=False) for row in rows))

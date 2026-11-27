@@ -115,6 +115,20 @@
           "text": "Hallintapaneeli käyttää PySide6:n Qt Widgets -kirjastoa. Asenna PySide6 nykyiseen virtuaaliympäristöön ennen päivittämistä vanhasta PyQt5-versiosta."
         }
       ]
+    },
+    {
+      "version": "1.3.1",
+      "date": "2026-11-27",
+      "changes": [
+        {
+          "type": "fix",
+          "text": "Ollama rajaa keskustelumuistin ja vastausjonon samaan keskusteluun, säilyttää henkilöiden näyttönimet ja vähentää toistuvia aloitustervehdyksiä."
+        },
+        {
+          "type": "improve",
+          "text": "AI-keskustelujen vianetsintä näyttää keskustelun jatkumisen ja mallin ajoitukset. Viestitekstit voi kopioida erikseen."
+        }
+      ]
     }
   ]
 }

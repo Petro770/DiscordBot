@@ -1,0 +1,66 @@
+import json
+import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import discord
+
+from bot.ollama_people import conversation_scope, prepare_people
+from bot.ollama_style import SessionMemory, strip_repeat_greeting
+
+
+class OllamaConversationTests(unittest.IsolatedAsyncioTestCase):
+    def message(self, message_id, parent=None):
+        return SimpleNamespace(
+            id=message_id,
+            channel=SimpleNamespace(id=10),
+            guild=object(),
+            type=discord.MessageType.reply if parent else discord.MessageType.default,
+            reference=SimpleNamespace(
+                channel_id=10, message_id=parent.id, resolved=None, cached_message=parent,
+            ) if parent else None,
+            author=SimpleNamespace(id=1, display_name="Janne", bot=False),
+            mentions=[],
+            content=f"Viesti {message_id}",
+        )
+
+    async def test_replies_to_different_roots_have_separate_context(self):
+        root = self.message(100)
+        answer = self.message(101, root)
+        followup = self.message(102, answer)
+        other = self.message(200)
+        scope, ancestors = await conversation_scope(followup)
+        self.assertEqual(scope, (10, 100))
+        self.assertEqual(await conversation_scope(other), ((10, 200), []))
+
+        with patch("config.OLLAMA_RECENT_MESSAGES", 12):
+            payload, _, count, _ = await prepare_people(
+                followup, "Entä sitten?", 2, ancestors, frozenset({100, 101}),
+            )
+        self.assertEqual(count, 0)
+        self.assertNotIn("kanavaviestit", json.loads(payload))
+
+    async def test_memory_resolves_names_without_leaking_across_roots(self):
+        memory = SessionMemory()
+        payload, _, _, _ = await prepare_people(self.message(100), "Hei <@1>", 2, [])
+        memory.remember((10, 100), payload, "Moi [henkilo_1]", "rento", message_ids=(100, 101))
+        self.assertEqual(memory.chat_history((10, 100)), [
+            {"role": "user", "content": "Janne: Hei Janne"},
+            {"role": "assistant", "content": "Moi Janne"},
+        ])
+        self.assertEqual(memory.message_ids((10, 100)), {100, 101})
+        self.assertEqual(memory.chat_history((10, 200)), [])
+        self.assertEqual(memory.style((10, 200)), "")
+
+    async def test_followup_is_marked_even_without_a_style(self):
+        memory = SessionMemory()
+        scope = (10, None)
+        payload, _, _, _ = await prepare_people(self.message(100), "Hei", 2, [])
+        self.assertNotIn("istunto", json.loads(memory.add_context(scope, payload)))
+        memory.remember(scope, payload, "Hei!", None)
+        self.assertEqual(json.loads(memory.add_context(scope, payload))["istunto"], {"jatkuu": True})
+
+    def test_only_standalone_opening_greeting_is_removed(self):
+        self.assertEqual(strip_repeat_greeting("Moi!\nTässä on vastaus."), "Tässä on vastaus.")
+        self.assertEqual(strip_repeat_greeting("Hei!"), "Hei!")
+        self.assertEqual(strip_repeat_greeting('Sano "Hei!"'), 'Sano "Hei!"')

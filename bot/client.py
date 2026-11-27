@@ -65,6 +65,8 @@ def register_events(bot: discord.Client, print_queue: PrintQueue):
             if style:
                 bullets = "\n".join(f"• {discord.utils.escape_markdown(line)}" for line in style.splitlines())
                 content = f"**Tämän keskustelun AI-tyyliohjeet**\n{bullets}"
+            elif interaction.guild_id is not None and not isinstance(interaction.channel, discord.Thread):
+                content = "Tyyliohjeet ovat vastausketjukohtaisia. Komento näyttää tyylin Discord-ketjussa tai yksityisviestissä."
             else:
                 content = "Tässä keskustelussa ei ole aktiivisia AI-tyylilisäyksiä."
         await interaction.response.send_message(content, allowed_mentions=discord.AllowedMentions.none())

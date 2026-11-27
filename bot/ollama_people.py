@@ -61,6 +61,33 @@ async def _reply_message(message: discord.Message, recent: list[discord.Message]
         return None
 
 
+async def conversation_scope(message: discord.Message):
+    """Use the Discord thread, DM, or root of a channel reply chain."""
+    channel_id = message.channel.id
+    if isinstance(message.channel, discord.Thread) or message.guild is None:
+        return (channel_id, None), []
+
+    async def collect():
+        ancestors = []
+        current = message
+        for _ in range(16):
+            reference = _reply_reference(current)
+            if reference is None or reference.message_id is None:
+                return (channel_id, current.id), ancestors
+            parent = await _reply_message(current, [])
+            if parent is None:
+                return (channel_id, reference.message_id), ancestors
+            ancestors.append(parent)
+            current = parent
+        return (channel_id, current.id), ancestors
+
+    try:
+        return await asyncio.wait_for(collect(), timeout=3)
+    except asyncio.TimeoutError:
+        reference = _reply_reference(message)
+        return (channel_id, reference.message_id if reference and reference.message_id else message.id), []
+
+
 async def _recent_messages(message: discord.Message, bot_user_id: int) -> list[discord.Message]:
     limit = config.OLLAMA_RECENT_MESSAGES
     if limit == 0:
@@ -80,7 +107,11 @@ async def _recent_messages(message: discord.Message, bot_user_id: int) -> list[d
         return []
 
 
-async def prepare_people(message: discord.Message, prompt: str, bot_user_id: int):
+async def prepare_people(
+    message: discord.Message, prompt: str, bot_user_id: int,
+    ancestors: list[discord.Message] | None = None,
+    remembered_ids: frozenset[int] = frozenset(),
+):
     people: dict[int, dict] = {}
 
     def add(user, role: str):
@@ -96,12 +127,22 @@ async def prepare_people(message: discord.Message, prompt: str, bot_user_id: int
             people[user.id]["roolit"].append(role)
 
     add(message.author, "kirjoittaja")
-    recent = await _recent_messages(message, bot_user_id)
-    reply = await _reply_message(message, recent)
+    limit = config.OLLAMA_RECENT_MESSAGES
+    if ancestors is None:
+        recent = await _recent_messages(message, bot_user_id)
+        reply = await _reply_message(message, recent)
+    else:
+        reply = ancestors[0] if ancestors else None
+        recent = [
+            prior for prior in ancestors
+            if (not prior.author.bot or prior.author.id == bot_user_id) and prior.content.strip()
+        ]
+        recent = list(reversed(recent[:12 if limit is None else limit]))
+    recent = [prior for prior in recent if prior.id not in remembered_ids]
     if reply is not None:
         if not reply.author.bot or reply.author.id == bot_user_id:
             add(reply.author, "vastatun viestin kirjoittaja")
-            if config.OLLAMA_RECENT_MESSAGES != 0 and reply.content.strip() and all(prior.id != reply.id for prior in recent):
+            if limit != 0 and reply.id not in remembered_ids and reply.content.strip() and all(prior.id != reply.id for prior in recent):
                 recent.insert(0, reply)
     for user in message.mentions[:12]:
         add(user, "mainittu")

@@ -20,7 +20,7 @@ DOTENV_ADDED_VALUES = {
     key: value for key, value in os.environ.items() if key not in INHERITED_ENV_KEYS
 }
 
-BOT_VERSION = "1.3.0"
+BOT_VERSION = "1.3.1"
 
 # Discord
 TOKEN = os.environ.get("DISCORD_TOKEN", "").strip()

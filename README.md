@@ -146,15 +146,18 @@ tunnistettujen henkilöiden näyttönimet ja roolit. Se tunnistaa kirjoittajan,
 enintään 12 Discordin ilmoittamaa mainintaa ja samassa kanavassa vastatun
 viestin kirjoittajan. Maininnat välitetään mallille viitteinä, jotka botti
 muuntaa vastauksessa Discord-maininnoiksi ilman pingiä. Mukaan voi tulla lyhyitä katkelmia aiemmista Ollama-vuoroista
-samassa keskustelussa.
+samassa keskustelussa. Kun muistissa on aiempi AI-vuoro, malli saa
+erillisen tiedon keskustelun jatkumisesta. Botti siivoaa jatkovastauksen
+alusta erillisen lyhyen tervehdyksen, jos sen jälkeen on vastaustekstiä.
 
 Kokeile esimerkiksi `@Botti sano @Käyttäjä että aloitetaan kahdeksalta`
 tai vastaa henkilön viestiin tekstillä `@Botti kerro hänelle että aloitetaan
 kahdeksalta`.
 Vapaat Ollama-palvelimet käsittelevät kysymyksiä rinnakkain, enintään yksi
-kysymys palvelinta kohti. Saman kanavan tai yksityisviestikeskustelun
-vuorot käsitellään saapumisjärjestyksessä, jotta seuraava vastaus saa
-käyttöönsä edellisen vuoron. Botti voi pitää
+kysymys palvelinta kohti. Saman Discord-ketjun, yksityisviestikeskustelun tai vastausketjun
+vuorot käsitellään peräkkäin. Jatka tavallisella palvelinkanavalla
+keskustelua vastaamalla ketjun viestiin ja mainitsemalla botti. Uusi
+itsenäinen maininta aloittaa oman keskustelun. Botti voi pitää
 käsittelypaikkojen lisäksi enintään 20 viestiä jonossa tai odottamassa omaa
 vastausvuoroaan. Täyden jonon merkkinä botti reagoi uuteen viestiin 🚫.
 Kokonaisaika alkaa viestin päästessä käsittelyyn. Botin koneen pitää päästä
@@ -164,12 +167,12 @@ esimerkiksi PowerShellissä komennolla
 Jos Ollama kuuntelee vain paikallisia yhteyksiä, määritä palvelimella
 `OLLAMA_HOST` kuuntelemaan lähiverkon osoitetta.
 
-Botti hakee oletuksena enintään 12 aiempaa viestiä samasta kanavasta,
-ketjusta tai yksityisviestikeskustelusta ja välittää tekstikatkelmat
-Ollamalle taustatietona. Mukana ovat myös tämän botin omat viestit ja
-Discord-vastausten viittaukset. Nykyisen vastauksen kohde voidaan lisätä
-erikseen, jos se jäi haun ulkopuolelle. Aseta `OLLAMA_RECENT_MESSAGES=0`, jos haluat
-käyttää vain botin omia AI-vuoroja. Asetuksen vaihteluväli on 0–30.
+Botti hakee oletuksena enintään 12 taustaviestiä Discord-ketjusta,
+yksityisviestikeskustelusta tai tavallisen kanavan viestin vastausketjusta.
+Muistissa olevat AI-vuorot välitetään mallille käyttäjän ja avustajan
+viesteinä. Muisti säilyttää näyttönimet ja poistaa samojen vuorojen
+kaksoiskappaleet Discord-taustasta. Aseta `OLLAMA_RECENT_MESSAGES=0`,
+jos haluat käyttää vain botin omia AI-vuoroja. Asetuksen vaihteluväli on 0–30.
 Haku käyttää botin viestihistorian lukuoikeutta.
 
 ### AI-keskustelujen seuranta
@@ -177,7 +180,14 @@ Haku käyttää botin viestihistorian lukuoikeutta.
 Hallintapaneelin **AI-keskustelut…**-ikkunassa näkyvät aktiiviset ja
 viimeisimmät pyynnöt, malliyritykset, aikakatkaisut ja Discord-lähetys.
 Valitse keskustelu ja pyyntö nähdäksesi aikajanan. **Kopioi vianetsintätiedot**
-kopioi valitun pyynnön tapahtumat ilman viestitekstejä. Tekstijäljitys näyttää
+kopioi valitun pyynnön tapahtumat ilman viestitekstejä. Kopioon sisältyy
+tieto keskustelun jatkumisesta ja tervehdyskorjauksesta sekä Ollaman
+ilmoittamat mallin lataus-, syötteen käsittely- ja generointiajat, kun
+palvelin palauttaa ne. Kopiossa voi näkyä tunnisteita ja palvelinosoitteita.
+**Kopioi vianetsintätiedot ja viestitekstit…** lisää nykyisen mallisyötteen,
+muistihistorian ja vastaustekstit. Painike on käytettävissä, kun valitulla
+pyynnöllä on tekstijäljitys. Tarkista tekstit ja tunnisteet ennen jakamista.
+Tekstijäljitys näyttää
 mallin syötteen, raakavastaukset ja lähetetyn tekstin, kun
 `OLLAMA_TRACE_ENABLED=true`. Näkymä kerää tapahtumia paneelin käynnistyksestä.
 
